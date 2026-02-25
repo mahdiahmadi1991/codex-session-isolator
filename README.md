@@ -32,7 +32,6 @@ This isolates Codex state per project without changing global/default behavior.
 - `launchers/CodexSessionIsolator.ps1` - Primary smart launcher for Windows.
 - `launchers/codex-session-isolator.bat` - Canonical batch launcher for Windows.
 - `launchers/codex-session-isolator.sh` - Canonical launcher for Linux/macOS.
-- `launchers/OpenAlynBookWSL.bat` - Compatibility wrapper.
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
 - `docs/TESTING.md` - Manual test matrix.
 
@@ -44,6 +43,7 @@ Windows:
 
 ```bat
 .\tools\new-vsc-launcher.bat "C:\path\to\project"
+.\tools\new-vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
 PowerShell:
@@ -54,11 +54,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizar
 
 The wizard asks for:
 
-- folder vs workspace launch target
-- Remote WSL mode and distro selection (when needed)
+- Remote WSL mode
 - whether Codex should run in WSL for this project
-- whether `.codex/sessions` and `.codex/archived_sessions` should be git-ignored
-- optional logging default for the generated launcher
+- whether Codex chat sessions should be git-ignored
+
+Wizard defaults:
+
+- If exactly one workspace file exists in target path, it is selected automatically.
+- If no workspace file exists, folder target is used.
+- It asks workspace selection only when more than one workspace file is found.
+- If WSL is not installed/available, WSL-related questions are skipped automatically.
+- Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
+- Logging is disabled by default and enabled only when running wizard with `--debug`.
+- On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
+- Wizard always writes:
+  - `chatgpt.openOnStartup=true`
+  - `chatgpt.runCodexInWindowsSubsystemForLinux=<selected>`
+  in `.vscode/settings.json`, and also in `.code-workspace` settings when launch target is a workspace file.
 
 ### Windows
 

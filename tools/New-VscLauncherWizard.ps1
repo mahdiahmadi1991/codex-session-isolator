@@ -1,12 +1,18 @@
 param(
-  [string]$TargetPath
+  [string]$TargetPath,
+  [switch]$DebugMode
 )
 
 $ErrorActionPreference = "Stop"
+$script:WizardLogPath = $null
 
 function Write-Info {
   param([string]$Message)
   Write-Host "[wizard] $Message"
+  if (-not [string]::IsNullOrWhiteSpace($script:WizardLogPath)) {
+    $line = "{0} [wizard] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message
+    Add-Content -LiteralPath $script:WizardLogPath -Value $line
+  }
 }
 
 function Read-NonEmpty {
@@ -81,21 +87,168 @@ function Read-ChoiceIndex {
   }
 }
 
-function Get-WslDistroList {
-  try {
-    $items = & wsl.exe -l -q 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      return @()
+function Normalize-WslName {
+  param([string]$Name)
+
+  $trimmed = $Name.Trim()
+  if ([string]::IsNullOrWhiteSpace($trimmed)) {
+    return $trimmed
+  }
+
+  $tokens = $trimmed -split '\s+'
+  if ($tokens.Count -gt 1) {
+    $singleCharOnly = $true
+    foreach ($token in $tokens) {
+      if ($token.Length -gt 1) {
+        $singleCharOnly = $false
+        break
+      }
     }
 
-    return @(
-      $items |
-      ForEach-Object { ($_ -replace '\0', '').Trim() } |
-      Where-Object { $_ -and $_ -notmatch '^docker-desktop(-data)?$' }
-    )
-  } catch {
-    return @()
+    if ($singleCharOnly) {
+      return ($tokens -join "")
+    }
   }
+
+  return $trimmed
+}
+
+function Get-WslCommandText {
+  param([string]$Arguments)
+
+  $id = [Guid]::NewGuid().ToString("N")
+  $outPath = Join-Path $env:TEMP ("wsl-csi-" + $id + ".out")
+  $errPath = Join-Path $env:TEMP ("wsl-csi-" + $id + ".err")
+  try {
+    $proc = Start-Process `
+      -FilePath "wsl.exe" `
+      -ArgumentList $Arguments `
+      -NoNewWindow `
+      -Wait `
+      -PassThru `
+      -RedirectStandardOutput $outPath `
+      -RedirectStandardError $errPath
+
+    if ($proc.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $outPath -PathType Leaf)) {
+      return ""
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($outPath)
+    if ($bytes.Length -eq 0) {
+      return ""
+    }
+
+    if ($bytes.Length -ge 2 -and $bytes[1] -eq 0) {
+      return [Text.Encoding]::Unicode.GetString($bytes)
+    }
+
+    return [Text.Encoding]::UTF8.GetString($bytes)
+  } catch {
+    return ""
+  } finally {
+    if (Test-Path -LiteralPath $outPath -PathType Leaf) {
+      Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $errPath -PathType Leaf) {
+      Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Get-DefaultWslDistro {
+  try {
+    $statusRaw = Get-WslCommandText -Arguments "--status"
+    if ([string]::IsNullOrWhiteSpace($statusRaw)) {
+      return $null
+    }
+
+    $statusText = ($statusRaw -replace [string][char]0, "")
+    if ($statusText -match '(?im)Default\s*Distribution:\s*([^\r\n]+)') {
+      return (Normalize-WslName -Name $Matches[1])
+    }
+  } catch {
+  }
+
+  return $null
+}
+
+function Get-WslDistroList {
+  $distros = @()
+
+  try {
+    $lines = cmd /c "wsl -l -q" 2>$null
+    foreach ($line in $lines) {
+      $clean = Normalize-WslName -Name (($line -replace [string][char]0, "").Trim())
+      if (-not [string]::IsNullOrWhiteSpace($clean) -and $clean -notmatch '^docker-desktop(-data)?$') {
+        $distros += $clean
+      }
+    }
+  } catch {
+  }
+
+  if ($distros.Count -gt 0) {
+    return @($distros | Select-Object -Unique)
+  }
+
+  $defaultDistro = Get-DefaultWslDistro
+  if (-not [string]::IsNullOrWhiteSpace($defaultDistro)) {
+    return @($defaultDistro)
+  }
+
+  return @()
+}
+
+function Test-WslAvailable {
+  if ($env:CSI_FORCE_NO_WSL -eq "1") {
+    return $false
+  }
+
+  try {
+    $cmd = Get-Command wsl.exe -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) {
+      return $false
+    }
+
+    $null = cmd /c "wsl --status >nul 2>nul"
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Get-RelativePathSafe {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BasePath,
+    [Parameter(Mandatory = $true)]
+    [string]$TargetPath
+  )
+
+  $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
+  if ($null -ne $method) {
+    return [IO.Path]::GetRelativePath($BasePath, $TargetPath)
+  }
+
+  $baseResolved = (Resolve-Path -LiteralPath $BasePath).Path
+  $targetResolved = (Resolve-Path -LiteralPath $TargetPath).Path
+
+  $separator = [IO.Path]::DirectorySeparatorChar
+  $baseWithSlash = $baseResolved.TrimEnd('\', '/') + $separator
+
+  $baseUri = [Uri]$baseWithSlash
+  $targetUri = [Uri]$targetResolved
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relative = [Uri]::UnescapeDataString($relativeUri.ToString()).Replace('/', $separator)
+
+  if ([string]::IsNullOrWhiteSpace($relative)) {
+    return "."
+  }
+
+  return $relative
 }
 
 function Ensure-JsonObjectFile {
@@ -118,10 +271,31 @@ function Ensure-JsonObjectFile {
   return [ordered]@{}
 }
 
-function Set-VscodeCodexWslSetting {
+function Convert-ToHashtable {
+  param(
+    [Parameter(Mandatory = $true)]
+    $InputObject
+  )
+
+  if ($InputObject -is [System.Collections.IDictionary]) {
+    $result = [ordered]@{}
+    foreach ($key in $InputObject.Keys) {
+      $result[$key] = $InputObject[$key]
+    }
+    return $result
+  }
+
+  $result = [ordered]@{}
+  foreach ($prop in $InputObject.PSObject.Properties) {
+    $result[$prop.Name] = $prop.Value
+  }
+  return $result
+}
+
+function Set-VscodeChatGptSettings {
   param(
     [string]$RootPath,
-    [bool]$Value
+    [bool]$RunCodexInWsl
   )
 
   $vscodeDir = Join-Path $RootPath ".vscode"
@@ -129,16 +303,109 @@ function Set-VscodeCodexWslSetting {
   New-Item -ItemType Directory -Force -Path $vscodeDir | Out-Null
 
   $obj = Ensure-JsonObjectFile -Path $settingsPath
-  $obj["chatgpt.runCodexInWindowsSubsystemForLinux"] = $Value
+  if ($obj -isnot [System.Collections.IDictionary]) {
+    $obj = Convert-ToHashtable -InputObject $obj
+  }
+  $previousRunCodexInWsl = $null
+  $previousOpenOnStartup = $null
+  if ($obj.Contains("chatgpt.runCodexInWindowsSubsystemForLinux")) {
+    $raw = $obj["chatgpt.runCodexInWindowsSubsystemForLinux"]
+    if ($raw -is [bool]) {
+      $previousRunCodexInWsl = $raw
+    }
+  }
+  if ($obj.Contains("chatgpt.openOnStartup")) {
+    $raw = $obj["chatgpt.openOnStartup"]
+    if ($raw -is [bool]) {
+      $previousOpenOnStartup = $raw
+    }
+  }
+
+  $obj["chatgpt.runCodexInWindowsSubsystemForLinux"] = $RunCodexInWsl
+  $obj["chatgpt.openOnStartup"] = $true
 
   $json = $obj | ConvertTo-Json -Depth 50
   Set-Content -LiteralPath $settingsPath -Value $json
+
+  return @{
+    PreviousRunCodexInWsl = $previousRunCodexInWsl
+    PreviousOpenOnStartup = $previousOpenOnStartup
+  }
+}
+
+function Set-CodeWorkspaceChatGptSettings {
+  param(
+    [string]$WorkspacePath,
+    [bool]$RunCodexInWsl
+  )
+
+  if (-not (Test-Path -LiteralPath $WorkspacePath -PathType Leaf)) {
+    return @{
+      Applied = $false
+      Reason = "Workspace file not found."
+    }
+  }
+
+  $raw = Get-Content -LiteralPath $WorkspacePath -Raw
+  $workspaceObject = $null
+  try {
+    $workspaceObject = $raw | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    return @{
+      Applied = $false
+      Reason = "Workspace file is not valid JSON and could not be updated safely."
+    }
+  }
+
+  if ($workspaceObject -isnot [System.Collections.IDictionary]) {
+    $workspaceObject = Convert-ToHashtable -InputObject $workspaceObject
+  }
+
+  $settings = $null
+  if ($workspaceObject.Contains("settings")) {
+    $settings = $workspaceObject["settings"]
+  }
+
+  if ($null -eq $settings) {
+    $settings = [ordered]@{}
+  } elseif ($settings -isnot [System.Collections.IDictionary]) {
+    $settings = Convert-ToHashtable -InputObject $settings
+  }
+
+  $previousRunCodexInWsl = $null
+  $previousOpenOnStartup = $null
+  if ($settings.Contains("chatgpt.runCodexInWindowsSubsystemForLinux")) {
+    $rawRun = $settings["chatgpt.runCodexInWindowsSubsystemForLinux"]
+    if ($rawRun -is [bool]) {
+      $previousRunCodexInWsl = $rawRun
+    }
+  }
+  if ($settings.Contains("chatgpt.openOnStartup")) {
+    $rawOpen = $settings["chatgpt.openOnStartup"]
+    if ($rawOpen -is [bool]) {
+      $previousOpenOnStartup = $rawOpen
+    }
+  }
+
+  $settings["chatgpt.runCodexInWindowsSubsystemForLinux"] = $RunCodexInWsl
+  $settings["chatgpt.openOnStartup"] = $true
+  $workspaceObject["settings"] = $settings
+
+  Set-Content -LiteralPath $WorkspacePath -Value ($workspaceObject | ConvertTo-Json -Depth 50)
+  return @{
+    Applied = $true
+    Reason = ""
+    PreviousRunCodexInWsl = $previousRunCodexInWsl
+    PreviousOpenOnStartup = $previousOpenOnStartup
+  }
 }
 
 function Update-GitIgnoreBlock {
   param(
     [string]$RootPath,
-    [bool]$IgnoreSessions
+    [bool]$IgnoreSessions,
+    [string]$LauncherFileName,
+    [string]$MetadataDirName
   )
 
   $gitignorePath = Join-Path $RootPath ".gitignore"
@@ -148,12 +415,13 @@ function Update-GitIgnoreBlock {
   $blockLines = @(
     $startMarker
     "# Managed by Codex Session Isolator launcher wizard."
+    $LauncherFileName
+    "$MetadataDirName/"
   )
 
   if ($IgnoreSessions) {
     $blockLines += @(
       ".codex/"
-      ".vsc_launcher_logs/"
     )
   } else {
     $blockLines += @(
@@ -162,7 +430,6 @@ function Update-GitIgnoreBlock {
       "!.codex/sessions/**"
       "!.codex/archived_sessions/"
       "!.codex/archived_sessions/**"
-      ".vsc_launcher_logs/"
     )
   }
 
@@ -192,10 +459,99 @@ function Update-GitIgnoreBlock {
   }
 }
 
-function New-WindowsLauncherFiles {
+function Initialize-WizardLogging {
   param(
     [string]$RootPath,
-    [string]$LauncherName,
+    [string]$MetadataDirName
+  )
+
+  $metaDir = Join-Path $RootPath $MetadataDirName
+  $logsDir = Join-Path $metaDir "logs"
+  New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+  $script:WizardLogPath = Join-Path $logsDir ("wizard-{0}-{1}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $PID)
+  Set-Content -LiteralPath $script:WizardLogPath -Value ("{0} [wizard] start" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"))
+}
+
+function Get-WizardDefaults {
+  param(
+    [string]$RootPath,
+    [string]$MetadataDirName
+  )
+
+  $metaDir = Join-Path $RootPath $MetadataDirName
+  $defaultsPath = Join-Path $metaDir "wizard.defaults.json"
+  $values = [ordered]@{
+    useRemoteWsl = $null
+    codexRunInWsl = $null
+    ignoreSessions = $null
+  }
+
+  if (Test-Path -LiteralPath $defaultsPath -PathType Leaf) {
+    try {
+      $obj = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+      foreach ($key in @("useRemoteWsl", "codexRunInWsl", "ignoreSessions")) {
+        if ($obj.PSObject.Properties.Name -contains $key) {
+          $raw = $obj.$key
+          if ($raw -is [bool]) {
+            $values[$key] = $raw
+          }
+        }
+      }
+    } catch {
+    }
+  }
+
+  return @{
+    Path = $defaultsPath
+    Values = $values
+  }
+}
+
+function Save-WizardDefaults {
+  param(
+    [string]$DefaultsPath,
+    [bool]$UseRemoteWsl,
+    [bool]$CodexRunInWsl,
+    [bool]$IgnoreSessions
+  )
+
+  $parent = Split-Path -Parent $DefaultsPath
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+
+  $payload = [ordered]@{
+    useRemoteWsl = $UseRemoteWsl
+    codexRunInWsl = $CodexRunInWsl
+    ignoreSessions = $IgnoreSessions
+    updatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+  }
+
+  Set-Content -LiteralPath $DefaultsPath -Value ($payload | ConvertTo-Json -Depth 10)
+}
+
+function Remove-LegacyGeneratedArtifacts {
+  param(
+    [string]$RootPath,
+    [string]$LauncherBaseName
+  )
+
+  $legacyPaths = @(
+    (Join-Path $RootPath "$LauncherBaseName.ps1"),
+    (Join-Path $RootPath "$LauncherBaseName.config.json"),
+    (Join-Path $RootPath ".vsc_launcher_logs")
+  )
+
+  foreach ($path in $legacyPaths) {
+    if (Test-Path -LiteralPath $path -PathType Any) {
+      Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function New-WindowsLauncherFile {
+  param(
+    [string]$RootPath,
+    [string]$LauncherBaseName,
+    [string]$MetadataDirName,
     [string]$LaunchMode,
     [string]$WorkspaceRelativePath,
     [bool]$UseRemoteWsl,
@@ -203,13 +559,12 @@ function New-WindowsLauncherFiles {
     [bool]$EnableLoggingByDefault
   )
 
-  $configFileName = "$LauncherName.config.json"
-  $ps1FileName = "$LauncherName.ps1"
-  $batFileName = "$LauncherName.bat"
+  $metadataDirPath = Join-Path $RootPath $MetadataDirName
+  $configPath = Join-Path $metadataDirPath "config.json"
+  $runnerPath = Join-Path $metadataDirPath "runner.ps1"
+  $launcherPath = Join-Path $RootPath "$LauncherBaseName.bat"
 
-  $configPath = Join-Path $RootPath $configFileName
-  $ps1Path = Join-Path $RootPath $ps1FileName
-  $batPath = Join-Path $RootPath $batFileName
+  New-Item -ItemType Directory -Force -Path $metadataDirPath | Out-Null
 
   $config = [ordered]@{
     version = 1
@@ -223,21 +578,36 @@ function New-WindowsLauncherFiles {
 
   Set-Content -LiteralPath $configPath -Value ($config | ConvertTo-Json -Depth 20)
 
-  $ps1Template = @'
+  $runnerTemplate = @'
 param(
   [switch]$Log,
-  [switch]$NoLog
+  [switch]$NoLog,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
+$script:ExitCode = 1
+$script:EnableLog = $false
+$script:LogFilePath = $null
+$script:RunId = [Guid]::NewGuid().ToString("N")
+
+function Write-LauncherLog {
+  param([string]$Message)
+  if (-not $script:EnableLog -or [string]::IsNullOrWhiteSpace($script:LogFilePath)) {
+    return
+  }
+
+  $line = "{0} [{1}] {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $script:RunId, $Message
+  Add-Content -LiteralPath $script:LogFilePath -Value $line
+}
 
 function Fail {
   param(
     [string]$Message,
     [int]$Code = 1
   )
-  Write-Host $Message
-  exit $Code
+  $script:ExitCode = $Code
+  throw $Message
 }
 
 function Convert-WindowsPathToLinuxPath {
@@ -258,180 +628,238 @@ function Convert-WindowsPathToLinuxPath {
     return $InputPath
   }
 
-  $converted = & wsl.exe -d $Distro -- wslpath -a -u $InputPath
+  if ($InputPath -match '^[A-Za-z]:[\\/]') {
+    $drive = $InputPath.Substring(0, 1).ToLowerInvariant()
+    $rest = $InputPath.Substring(2) -replace '\\', '/'
+    if (-not $rest.StartsWith('/')) {
+      $rest = '/' + $rest
+    }
+    return "/mnt/$drive$rest"
+  }
+
+  $normalized = $InputPath -replace '\\', '/'
+  $convertedRaw = & wsl.exe -d $Distro -- wslpath -a -u $normalized 2>&1
+  $converted = ($convertedRaw | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
-    throw "Failed to convert path '$InputPath' to Linux path in distro '$Distro'."
+    throw "Failed to convert path '$InputPath' to Linux path in distro '$Distro'. wslpath: $converted"
   }
-  return $converted.Trim()
+  return $converted
 }
 
-$configPath = Join-Path $PSScriptRoot "__CONFIG_FILE__"
-if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-  Fail "Launcher config not found: $configPath" 2
-}
-
-$config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-
-$enableLog = [bool]$config.enableLoggingByDefault
-if ($Log) { $enableLog = $true }
-if ($NoLog) { $enableLog = $false }
-
-$logFilePath = $null
-if ($enableLog) {
-  $logsDir = Join-Path $PSScriptRoot ".vsc_launcher_logs"
-  New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
-  $launcherBase = [IO.Path]::GetFileNameWithoutExtension($MyInvocation.MyCommand.Name)
-  $logFilePath = Join-Path $logsDir ("{0}-{1}.log" -f $launcherBase, (Get-Date -Format "yyyyMMdd"))
-}
-
-function Write-LauncherLog {
-  param([string]$Message)
-  if (-not $enableLog) { return }
-  $line = "{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message
-  Add-Content -LiteralPath $logFilePath -Value $line
-}
-
-$targetRoot = $PSScriptRoot
-$launchTarget = if ($config.launchMode -eq "workspace") {
-  Join-Path $targetRoot $config.workspaceRelativePath
-} else {
-  $targetRoot
-}
-
-if (-not (Test-Path -LiteralPath $launchTarget -PathType Any)) {
-  Fail "Launch target not found: $launchTarget" 3
-}
-
-$targetItem = Get-Item -LiteralPath $launchTarget -Force
-$codexHome = if ($targetItem.PSIsContainer) {
-  Join-Path $launchTarget ".codex"
-} else {
-  Join-Path (Split-Path -Parent $launchTarget) ".codex"
-}
-
-New-Item -ItemType Directory -Force -Path $codexHome | Out-Null
-Write-LauncherLog ("LaunchTarget={0}" -f $launchTarget)
-Write-LauncherLog ("CODEX_HOME={0}" -f $codexHome)
-
-if ($config.useRemoteWsl) {
-  if ([string]::IsNullOrWhiteSpace($config.wslDistro)) {
-    Fail "WSL distro is not configured in launcher config." 4
+try {
+  $configPath = Join-Path $PSScriptRoot "config.json"
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    Fail "Launcher config not found: $configPath" 2
   }
 
-  $linuxTarget = Convert-WindowsPathToLinuxPath -InputPath $launchTarget -Distro $config.wslDistro
-  $linuxEscaped = $linuxTarget -replace "'", "'\"'\"'"
-  $bashScript = "target='$linuxEscaped'; if [ -d ""`$target"" ]; then base=""`$target""; else base=""`$(dirname ""`$target"")""; fi; codex_home=""`$base/.codex""; mkdir -p ""`$codex_home""; export CODEX_HOME=""`$codex_home""; code --new-window ""`$target"""
-
-  Write-LauncherLog ("WSL Distro={0}" -f $config.wslDistro)
-  Write-LauncherLog ("WSL Target={0}" -f $linuxTarget)
-  & wsl.exe -d $config.wslDistro -- bash -lc $bashScript
-  if ($LASTEXITCODE -ne 0) {
-    Fail "Failed to launch VS Code in WSL mode." 5
+  $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+  $script:EnableLog = [bool]$config.enableLoggingByDefault
+  if ($env:VSC_LAUNCHER_LOG -eq "1" -or $env:VSC_LAUNCHER_LOG -ieq "true") {
+    $script:EnableLog = $true
   }
-} else {
-  $previousCodexHome = $env:CODEX_HOME
-  $hadCodexHome = Test-Path Env:CODEX_HOME
-  $hadElectronRunAsNode = Test-Path Env:ELECTRON_RUN_AS_NODE
-  $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  if ($Log) { $script:EnableLog = $true }
+  if ($NoLog) { $script:EnableLog = $false }
 
-  $env:CODEX_HOME = $codexHome
-  if ($hadElectronRunAsNode) {
-    Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+  if ($script:EnableLog) {
+    $logsDir = Join-Path $PSScriptRoot "logs"
+    New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+    $script:LogFilePath = Join-Path $logsDir ("launcher-{0}-{1}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $PID)
   }
 
-  try {
-    if (Get-Command code -ErrorAction SilentlyContinue) {
-      & code --new-window $launchTarget
-    } else {
-      $codeExe = Join-Path $env:LocalAppData "Programs\Microsoft VS Code\Code.exe"
-      if (-not (Test-Path -LiteralPath $codeExe -PathType Leaf)) {
-        Fail "VS Code executable not found. Install VS Code or add 'code' to PATH." 127
-      }
-      & $codeExe --new-window $launchTarget
+  Write-LauncherLog "START"
+  Write-LauncherLog ("ConfigPath={0}" -f $configPath)
+  Write-LauncherLog ("Config={0}" -f (($config | ConvertTo-Json -Compress -Depth 20)))
+  Write-LauncherLog ("User={0} Machine={1} PID={2} PS={3}" -f $env:USERNAME, $env:COMPUTERNAME, $PID, $PSVersionTable.PSVersion)
+
+  $targetRoot = Split-Path -Parent $PSScriptRoot
+  $launchTarget = if ($config.launchMode -eq "workspace") {
+    Join-Path $targetRoot ([string]$config.workspaceRelativePath)
+  } else {
+    $targetRoot
+  }
+
+  if (-not (Test-Path -LiteralPath $launchTarget -PathType Any)) {
+    Fail "Launch target not found: $launchTarget" 3
+  }
+
+  $targetItem = Get-Item -LiteralPath $launchTarget -Force
+  $codexHome = if ($targetItem.PSIsContainer) {
+    Join-Path $launchTarget ".codex"
+  } else {
+    Join-Path (Split-Path -Parent $launchTarget) ".codex"
+  }
+
+  New-Item -ItemType Directory -Force -Path $codexHome | Out-Null
+  Write-LauncherLog ("LaunchTarget={0}" -f $launchTarget)
+  Write-LauncherLog ("CODEX_HOME={0}" -f $codexHome)
+
+  if ($DryRun) {
+    Write-Host ("[dry-run] Launch target: {0}" -f $launchTarget)
+    Write-Host ("[dry-run] CODEX_HOME: {0}" -f $codexHome)
+    $script:ExitCode = 0
+    return
+  }
+
+  if ($config.useRemoteWsl) {
+    if ([string]::IsNullOrWhiteSpace($config.wslDistro)) {
+      Fail "WSL distro is not configured in launcher config." 4
     }
 
+    $linuxTarget = Convert-WindowsPathToLinuxPath -InputPath $launchTarget -Distro $config.wslDistro
+    $targetB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($linuxTarget))
+    $bashScript = @"
+set -euo pipefail
+target_b64='$targetB64'
+target=`$(printf '%s' "`$target_b64" | base64 -d)
+if [ -z "`$target" ]; then
+  echo "Resolved target is empty."
+  exit 2
+fi
+if [ -d "`$target" ]; then
+  base="`$target"
+else
+  base=`$(dirname "`$target")
+fi
+codex_home="`$base/.codex"
+mkdir -p "`$codex_home"
+export CODEX_HOME="`$codex_home"
+if ! command -v code >/dev/null 2>&1; then
+  echo "VS Code command 'code' not found in WSL PATH."
+  exit 127
+fi
+code --new-window "`$target"
+"@
+
+    Write-LauncherLog ("Mode=RemoteWSL Distro={0}" -f $config.wslDistro)
+    Write-LauncherLog ("WSLTarget={0}" -f $linuxTarget)
+    $bashScript | wsl.exe -d $config.wslDistro -- bash -s --
     if ($LASTEXITCODE -ne 0) {
-      Fail "Failed to launch VS Code." 6
+      Fail "Failed to launch VS Code in WSL mode." 5
     }
-  } finally {
-    if ($hadCodexHome) {
-      $env:CODEX_HOME = $previousCodexHome
-    } else {
-      Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
-    }
+  } else {
+    $previousCodexHome = $env:CODEX_HOME
+    $hadCodexHome = Test-Path Env:CODEX_HOME
+    $hadElectronRunAsNode = Test-Path Env:ELECTRON_RUN_AS_NODE
+    $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
 
+    $env:CODEX_HOME = $codexHome
     if ($hadElectronRunAsNode) {
-      $env:ELECTRON_RUN_AS_NODE = $previousElectronRunAsNode
-    } else {
       Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
     }
+
+    try {
+      $codeCommand = Get-Command code -ErrorAction SilentlyContinue
+      if ($null -ne $codeCommand) {
+        Write-LauncherLog ("Mode=Local CodeCommand={0}" -f $codeCommand.Source)
+        & code --new-window $launchTarget
+      } else {
+        $codeExe = Join-Path $env:LocalAppData "Programs\Microsoft VS Code\Code.exe"
+        if (-not (Test-Path -LiteralPath $codeExe -PathType Leaf)) {
+          Fail "VS Code executable not found. Install VS Code or add 'code' to PATH." 127
+        }
+        Write-LauncherLog ("Mode=Local CodeCommand={0}" -f $codeExe)
+        & $codeExe --new-window $launchTarget
+      }
+
+      if ($LASTEXITCODE -ne 0) {
+        Fail "Failed to launch VS Code." 6
+      }
+    } finally {
+      if ($hadCodexHome) {
+        $env:CODEX_HOME = $previousCodexHome
+      } else {
+        Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
+      }
+
+      if ($hadElectronRunAsNode) {
+        $env:ELECTRON_RUN_AS_NODE = $previousElectronRunAsNode
+      } else {
+        Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+      }
+    }
   }
+
+  $script:ExitCode = 0
+} catch {
+  $message = $_.Exception.Message
+  Write-LauncherLog ("ERROR={0}" -f $message)
+  if ($_.ScriptStackTrace) {
+    Write-LauncherLog ("STACK={0}" -f $_.ScriptStackTrace)
+  }
+  Write-Host $message
+} finally {
+  Write-LauncherLog ("END ExitCode={0}" -f $script:ExitCode)
 }
+
+exit $script:ExitCode
 '@
 
-  $ps1Content = $ps1Template.Replace("__CONFIG_FILE__", $configFileName)
-  Set-Content -LiteralPath $ps1Path -Value $ps1Content
+  Set-Content -LiteralPath $runnerPath -Value $runnerTemplate
 
   $batTemplate = @'
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%__PS1_FILE__" %*
+set "RUNNER=%SCRIPT_DIR%__META_DIR__\runner.ps1"
+if not exist "%RUNNER%" (
+  echo Launcher runner not found: %RUNNER%
+  exit /b 2
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%RUNNER%" %*
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%
 '@
 
-  $batContent = $batTemplate.Replace("__PS1_FILE__", $ps1FileName)
-  Set-Content -LiteralPath $batPath -Value $batContent
+  $batContent = $batTemplate.Replace("__META_DIR__", $MetadataDirName)
+  Set-Content -LiteralPath $launcherPath -Value $batContent
 
   return @{
     ConfigPath = $configPath
-    LauncherPowerShellPath = $ps1Path
-    LauncherBatchPath = $batPath
+    LauncherPath = $launcherPath
+    RunnerPath = $runnerPath
+    MetadataPath = $metadataDirPath
   }
 }
 
 function New-UnixLauncherFile {
   param(
     [string]$RootPath,
-    [string]$LauncherName,
+    [string]$LauncherBaseName,
+    [string]$MetadataDirName,
     [string]$LaunchMode,
     [string]$WorkspaceRelativePath,
     [bool]$EnableLoggingByDefault
   )
 
-  $scriptPath = Join-Path $RootPath "$LauncherName.sh"
+  $scriptPath = Join-Path $RootPath "$LauncherBaseName.sh"
+  $metadataDirPath = Join-Path $RootPath $MetadataDirName
+  $configPath = Join-Path $metadataDirPath "config.env"
+  New-Item -ItemType Directory -Force -Path $metadataDirPath | Out-Null
+
+  $workspaceRelB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($WorkspaceRelativePath))
   $enableLoggingLiteral = if ($EnableLoggingByDefault) { "1" } else { "0" }
+  $configContent = @"
+LAUNCH_MODE='$LaunchMode'
+WORKSPACE_REL_B64='$workspaceRelB64'
+ENABLE_LOGGING='$enableLoggingLiteral'
+"@
+  Set-Content -LiteralPath $configPath -Value $configContent
 
   $template = @'
 #!/usr/bin/env bash
 set -euo pipefail
 
-log_flag=""
-for arg in "$@"; do
-  if [[ "$arg" == "--log" ]]; then
-    log_flag="on"
-  elif [[ "$arg" == "--no-log" ]]; then
-    log_flag="off"
-  fi
-done
-
-enable_log=__ENABLE_LOG_DEFAULT__
-if [[ "$log_flag" == "on" ]]; then enable_log="1"; fi
-if [[ "$log_flag" == "off" ]]; then enable_log="0"; fi
-
-write_log() {
-  if [[ "$enable_log" != "1" ]]; then return; fi
-  local logs_dir="$SCRIPT_DIR/.vsc_launcher_logs"
-  mkdir -p "$logs_dir"
-  local log_file="$logs_dir/__LAUNCHER_NAME__-$(date +%Y%m%d).log"
-  printf "%s %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$log_file"
-}
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAUNCH_MODE="__LAUNCH_MODE__"
-WORKSPACE_REL="__WORKSPACE_REL__"
+META_DIR="$SCRIPT_DIR/__META_DIR__"
+CONFIG_FILE="$META_DIR/config.env"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Launcher config not found: $CONFIG_FILE"
+  exit 2
+fi
+source "$CONFIG_FILE"
+WORKSPACE_REL="$(printf '%s' "${WORKSPACE_REL_B64:-}" | base64 -d 2>/dev/null || true)"
 
 if [[ "$LAUNCH_MODE" == "workspace" ]]; then
   launch_target="$SCRIPT_DIR/$WORKSPACE_REL"
@@ -453,8 +881,13 @@ fi
 mkdir -p "$codex_home"
 export CODEX_HOME="$codex_home"
 
-write_log "LaunchTarget=$launch_target"
-write_log "CODEX_HOME=$codex_home"
+if [[ "${ENABLE_LOGGING:-0}" == "1" ]]; then
+  logs_dir="$META_DIR/logs"
+  mkdir -p "$logs_dir"
+  log_file="$logs_dir/launcher-$(date +%Y%m%d).log"
+  printf "%s %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "LaunchTarget=$launch_target" >> "$log_file"
+  printf "%s %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "CODEX_HOME=$codex_home" >> "$log_file"
+fi
 
 if ! command -v code >/dev/null 2>&1; then
   echo "VS Code command 'code' not found in PATH."
@@ -464,11 +897,7 @@ fi
 code --new-window "$launch_target"
 '@
 
-  $content = $template.
-    Replace("__ENABLE_LOG_DEFAULT__", $enableLoggingLiteral).
-    Replace("__LAUNCHER_NAME__", $LauncherName).
-    Replace("__LAUNCH_MODE__", $LaunchMode).
-    Replace("__WORKSPACE_REL__", $WorkspaceRelativePath)
+  $content = $template.Replace("__META_DIR__", $MetadataDirName)
 
   Set-Content -LiteralPath $scriptPath -Value $content
   try {
@@ -477,11 +906,17 @@ code --new-window "$launch_target"
   }
 
   return @{
-    LauncherShellPath = $scriptPath
+    LauncherPath = $scriptPath
+    ConfigPath = $configPath
+    MetadataPath = $metadataDirPath
   }
 }
 
 $platformIsWindows = $env:OS -eq "Windows_NT"
+$launcherBaseName = "vsc_launcher"
+$metadataDirName = ".vsc_launcher"
+$launcherFileName = if ($platformIsWindows) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
+$enableLoggingByDefault = [bool]$DebugMode
 
 if ([string]::IsNullOrWhiteSpace($TargetPath)) {
   $TargetPath = Read-NonEmpty -Prompt "Enter target folder path (repo or code folder)"
@@ -494,74 +929,123 @@ if (-not (Test-Path -LiteralPath $TargetPath -PathType Any)) {
 $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
 $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
 $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Path -Parent $resolvedTarget }
+Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
+$defaultsInfo = Get-WizardDefaults -RootPath $targetRoot -MetadataDirName $metadataDirName
+$wizardDefaults = $defaultsInfo.Values
 
 Write-Info ("Target root: {0}" -f $targetRoot)
-
-$workspaceFiles = @(
-  Get-ChildItem -Path $targetRoot -Filter *.code-workspace -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
-  ForEach-Object { $_.FullName }
-)
+Write-Info ("Generated launcher file: {0}" -f $launcherFileName)
+Write-Info ("Wizard log: {0}" -f $script:WizardLogPath)
+if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRunInWsl -or $null -ne $wizardDefaults.ignoreSessions) {
+  Write-Info ("Loaded defaults: remoteWsl={0}, codexInWsl={1}, ignoreSessions={2}" -f $wizardDefaults.useRemoteWsl, $wizardDefaults.codexRunInWsl, $wizardDefaults.ignoreSessions)
+}
 
 $launchMode = "folder"
 $workspaceRelativePath = ""
 
-if ($workspaceFiles.Count -gt 0) {
-  $options = @("Open folder root")
-  foreach ($ws in $workspaceFiles) {
-    $relative = [IO.Path]::GetRelativePath($targetRoot, $ws)
-    $options += ("Open workspace file: {0}" -f $relative)
-  }
+if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-workspace") {
+  $launchMode = "workspace"
+  $workspaceRelativePath = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $resolvedTarget
+  Write-Info ("Launch target defaulted to workspace: {0}" -f $workspaceRelativePath)
+} else {
+  $workspaceFiles = @(
+    Get-ChildItem -Path $targetRoot -Filter *.code-workspace -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.FullName }
+  )
 
-  $choice = Read-ChoiceIndex -Title "Select launch target type:" -Options $options -DefaultIndex 0
-  if ($choice -gt 0) {
+  if ($workspaceFiles.Count -eq 0) {
+    Write-Info "No workspace file found. Launch target defaulted to folder root."
+  } elseif ($workspaceFiles.Count -eq 1) {
     $launchMode = "workspace"
-    $selectedWorkspace = $workspaceFiles[$choice - 1]
-    $workspaceRelativePath = [IO.Path]::GetRelativePath($targetRoot, $selectedWorkspace)
+    $workspaceRelativePath = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $workspaceFiles[0]
+    Write-Info ("Single workspace found. Launch target defaulted to: {0}" -f $workspaceRelativePath)
+  } else {
+    $options = @()
+    foreach ($ws in $workspaceFiles) {
+      $relative = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $ws
+      $options += $relative
+    }
+
+    $choice = Read-ChoiceIndex -Title "Multiple workspace files found. Select one:" -Options $options -DefaultIndex 0
+    $launchMode = "workspace"
+    $workspaceRelativePath = $options[$choice]
+    Write-Info ("Selected workspace: {0}" -f $workspaceRelativePath)
   }
 }
 
 $useRemoteWsl = $false
 $wslDistro = ""
+$wslAvailable = $platformIsWindows -and (Test-WslAvailable)
 
-if ($platformIsWindows) {
-  $useRemoteWsl = Read-YesNo -Prompt "Launch VS Code in Remote WSL mode?" -DefaultValue $false
+if ($platformIsWindows -and $wslAvailable) {
+  $remoteDefault = if ($null -ne $wizardDefaults.useRemoteWsl) { [bool]$wizardDefaults.useRemoteWsl } else { $false }
+  $useRemoteWsl = Read-YesNo -Prompt "Launch VS Code in Remote WSL mode?" -DefaultValue $remoteDefault
+  Write-Info ("Remote WSL launch: {0}" -f ($(if ($useRemoteWsl) { "enabled" } else { "disabled" })))
   if ($useRemoteWsl) {
-    $distros = Get-WslDistroList
+    $distros = @(Get-WslDistroList)
+    Write-Info ("Detected WSL distros: {0}" -f (($distros | ForEach-Object { "'$_'" }) -join ", "))
     if ($distros.Count -eq 0) {
       throw "No WSL distro found. Install WSL or choose local mode."
     } elseif ($distros.Count -eq 1) {
       $wslDistro = $distros[0]
-      Write-Info ("Using WSL distro: {0}" -f $wslDistro)
+      Write-Info ("Using WSL distro (single detected): {0}" -f $wslDistro)
     } else {
       $idx = Read-ChoiceIndex -Title "Select WSL distro:" -Options $distros -DefaultIndex 0
       $wslDistro = $distros[$idx]
+      Write-Info ("Using WSL distro: {0}" -f $wslDistro)
     }
   }
+} elseif ($platformIsWindows) {
+  Write-Info "WSL not detected. WSL-related options are skipped."
 }
 
-$codexRunInWsl = if ($platformIsWindows) {
-  Read-YesNo -Prompt "Set Codex to run in WSL for this project?" -DefaultValue $useRemoteWsl
+$codexRunInWsl = if ($platformIsWindows -and $wslAvailable) {
+  $codexDefault = if ($null -ne $wizardDefaults.codexRunInWsl) { [bool]$wizardDefaults.codexRunInWsl } else { $useRemoteWsl }
+  Read-YesNo -Prompt "Set Codex to run in WSL for this project?" -DefaultValue $codexDefault
 } else {
   $false
 }
-
-$ignoreSessions = Read-YesNo -Prompt "Ignore chat sessions (.codex/sessions and archived_sessions) in gitignore?" -DefaultValue $true
-$enableLoggingByDefault = Read-YesNo -Prompt "Enable launcher logging by default?" -DefaultValue $false
-$launcherNameRaw = Read-NonEmpty -Prompt "Launcher file name (without extension)" -DefaultValue "vsc_launcher"
-$launcherName = [IO.Path]::GetFileNameWithoutExtension($launcherNameRaw.Trim())
-if ([string]::IsNullOrWhiteSpace($launcherName)) {
-  $launcherName = "vsc_launcher"
+Write-Info ("VS Code setting chatgpt.runCodexInWindowsSubsystemForLinux = {0}" -f $codexRunInWsl.ToString().ToLowerInvariant())
+Write-Info "VS Code setting chatgpt.openOnStartup = true"
+if ($codexRunInWsl -and -not $useRemoteWsl) {
+  Write-Info "Codex-in-WSL is enabled while VS Code launch mode is local Windows."
 }
 
-if ($platformIsWindows) {
-  Set-VscodeCodexWslSetting -RootPath $targetRoot -Value $codexRunInWsl
+$ignoreDefault = if ($null -ne $wizardDefaults.ignoreSessions) { [bool]$wizardDefaults.ignoreSessions } else { $true }
+$ignoreSessions = Read-YesNo -Prompt "Ignore Codex chat sessions in gitignore?" -DefaultValue $ignoreDefault
+Write-Info ("Launcher logging default: {0}" -f ($(if ($enableLoggingByDefault) { "enabled (debug mode)" } else { "disabled" })))
+
+$settingsWrite = Set-VscodeChatGptSettings -RootPath $targetRoot -RunCodexInWsl $codexRunInWsl
+if ($null -ne $settingsWrite.PreviousRunCodexInWsl -and $settingsWrite.PreviousRunCodexInWsl -ne $codexRunInWsl) {
+  Write-Info "Codex WSL setting changed. If VS Code is already running, reload/restart may be required."
 }
-Update-GitIgnoreBlock -RootPath $targetRoot -IgnoreSessions $ignoreSessions
+
+if ($launchMode -eq "workspace" -and -not [string]::IsNullOrWhiteSpace($workspaceRelativePath)) {
+  $workspacePathForSettings = Join-Path $targetRoot $workspaceRelativePath
+  $workspaceSettingsWrite = Set-CodeWorkspaceChatGptSettings -WorkspacePath $workspacePathForSettings -RunCodexInWsl $codexRunInWsl
+  if ($workspaceSettingsWrite.Applied) {
+    Write-Info ("Workspace settings updated in: {0}" -f $workspaceRelativePath)
+    if ($null -ne $workspaceSettingsWrite.PreviousRunCodexInWsl -and $workspaceSettingsWrite.PreviousRunCodexInWsl -ne $codexRunInWsl) {
+      Write-Info "Workspace Codex WSL setting changed."
+    }
+  } else {
+    Write-Info ("Workspace settings were not updated: {0}" -f $workspaceSettingsWrite.Reason)
+  }
+}
+
+Save-WizardDefaults -DefaultsPath $defaultsInfo.Path -UseRemoteWsl $useRemoteWsl -CodexRunInWsl $codexRunInWsl -IgnoreSessions $ignoreSessions
+Remove-LegacyGeneratedArtifacts -RootPath $targetRoot -LauncherBaseName $launcherBaseName
+Update-GitIgnoreBlock `
+  -RootPath $targetRoot `
+  -IgnoreSessions $ignoreSessions `
+  -LauncherFileName $launcherFileName `
+  -MetadataDirName $metadataDirName
 
 $outputs = if ($platformIsWindows) {
-  New-WindowsLauncherFiles `
+  New-WindowsLauncherFile `
     -RootPath $targetRoot `
-    -LauncherName $launcherName `
+    -LauncherBaseName $launcherBaseName `
+    -MetadataDirName $metadataDirName `
     -LaunchMode $launchMode `
     -WorkspaceRelativePath $workspaceRelativePath `
     -UseRemoteWsl $useRemoteWsl `
@@ -570,7 +1054,8 @@ $outputs = if ($platformIsWindows) {
 } else {
   New-UnixLauncherFile `
     -RootPath $targetRoot `
-    -LauncherName $launcherName `
+    -LauncherBaseName $launcherBaseName `
+    -MetadataDirName $metadataDirName `
     -LaunchMode $launchMode `
     -WorkspaceRelativePath $workspaceRelativePath `
     -EnableLoggingByDefault $enableLoggingByDefault

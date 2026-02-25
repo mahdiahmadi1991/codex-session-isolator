@@ -18,6 +18,21 @@ All notable changes to this project are documented in this file.
 - Git ignore handling now supports policy:
   - always ignore sensitive `.codex` content
   - optionally ignore or keep `.codex/sessions` and `.codex/archived_sessions`
+- Wizard flow defaults improved:
+  - auto-select single workspace
+  - prompt workspace selection only for multiple workspace files
+  - folder mode auto-selected when no workspace file exists
+  - logging prompt removed; logging enabled only in wizard debug mode
+- Generated output simplified:
+  - one executable launcher file in target root (`vsc_launcher.bat` on Windows)
+  - launcher metadata/config moved under hidden `.vsc_launcher/`
+- WSL distro detection hardened for null-separated `wsl.exe` output on Windows.
+- Wizard now skips WSL-related prompts automatically when WSL is unavailable.
+- Fixed generated Windows launcher for Remote WSL mode to reliably resolve Windows paths and avoid `wslpath` conversion failures.
+- Wizard now persists per-target default answers for faster subsequent runs (`.vsc_launcher/wizard.defaults.json`).
+- Launcher logging is now richer (run id, config snapshot, environment info, stack trace on failure, exit code).
+- Workspace setting `chatgpt.openOnStartup` is now always set to `true`.
+- For workspace targets, wizard now also writes `chatgpt.runCodexInWindowsSubsystemForLinux` directly into `.code-workspace` settings to avoid scope mismatch.
 
 ## [0.2.1] - 2026-02-25
 
@@ -49,6 +64,5 @@ All notable changes to this project are documented in this file.
 - Cross-platform launcher scripts:
   - `launchers/CodexWorkspaceLauncher.ps1`
   - `launchers/codex-workspace-launcher.sh`
-  - `launchers/OpenAlynBookWSL.bat`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.

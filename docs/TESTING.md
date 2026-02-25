@@ -12,9 +12,24 @@ Command:
 
 Expected:
 
-- Wizard prompts for launch mode, WSL options, Codex WSL setting, session ignore, and logging.
-- It creates/replaces launcher files in target directory.
+- If target has one workspace file, no workspace prompt is shown and workspace is selected automatically.
+- If target has no workspace file, folder target is selected automatically.
+- If target has multiple workspace files, wizard asks to select one.
+- Wizard prompts for WSL options, Codex WSL setting, and session ignore.
+- It creates/replaces one launcher file in target directory plus `.vsc_launcher` metadata.
 - It updates managed `.gitignore` block.
+- It writes `.vscode/settings.json` with:
+  - `chatgpt.openOnStartup = true`
+  - `chatgpt.runCodexInWindowsSubsystemForLinux = <selected>`
+- If launch target is a workspace file, it also writes the same values into `<name>.code-workspace -> settings`.
+
+## 0.1) No WSL available
+
+Expected:
+
+- Wizard prints that WSL is not detected.
+- WSL-related questions are skipped.
+- `chatgpt.runCodexInWindowsSubsystemForLinux` is written as `false`.
 
 ## 1) Windows local workspace path
 
@@ -132,3 +147,27 @@ Command:
 Expected:
 
 - Clear error message: path not found.
+
+## 10) Debug mode logging default
+
+Command:
+
+```bat
+.\tools\new-vsc-launcher.bat "C:\path\to\repo" --debug
+```
+
+Expected:
+
+- Generated `.vsc_launcher/config.json` has `"enableLoggingByDefault": true`.
+- `.vsc_launcher/logs` includes launcher and wizard run logs with execution details.
+
+## 11) Wizard default reuse
+
+Steps:
+
+1. Run wizard once and choose non-default answers.
+2. Run wizard again and press Enter on prompts.
+
+Expected:
+
+- Previous answers are reused from `.vsc_launcher/wizard.defaults.json`.
