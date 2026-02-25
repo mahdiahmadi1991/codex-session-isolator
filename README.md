@@ -188,6 +188,9 @@ Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
 - Branch model:
   - `pre-release`: integration branch. Every push/merge auto-publishes Marketplace pre-release.
   - `main`: stable branch. Stable publish happens from GitHub Release (`release.published`).
+- Main promotion policy is enforced by `.github/workflows/main-promotion-policy.yml`:
+  - PRs into `main` must come from `pre-release`.
+  - Emergency hotfix PRs to `main` require label `allow-main-hotfix` and must be synced back to `pre-release`.
 - CI/Security workflows run only for `main` and `pre-release` (push + pull request).
 - Stable publish: create a GitHub Release tag that matches extension version (`v<version>`).
 - Manual publish: run the `Extension Publish` workflow via `workflow_dispatch` (`pre-release` or `stable`).

@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.
 - Auto-merge workflow for safe PRs (`.github/workflows/auto-merge-safe-prs.yml`) with branch and file-scope safeguards.
+- Main promotion policy workflow (`.github/workflows/main-promotion-policy.yml`) to require `pre-release` as the source branch for PRs into `main` (with explicit hotfix override label).
 - Stable release notes template (`docs/RELEASE_TEMPLATE.md`).
 - Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
 - Extension documentation: `docs/EXTENSION.md`.

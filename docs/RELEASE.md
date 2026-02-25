@@ -36,7 +36,8 @@ Security checks:
 - Confirm repository secret `VSCE_PAT` is configured.
 - Confirm branch model is followed:
   - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.
-  - `main` receives only stable-ready merges.
+  - `main` receives only stable-ready promotion PRs from `pre-release`.
+  - Emergency hotfixes to `main` require label `allow-main-hotfix` and a follow-up sync PR `main` -> `pre-release`.
 
 ## 3) Commit and tag
 
