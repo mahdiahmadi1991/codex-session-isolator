@@ -3,6 +3,7 @@
 ![Codex Session Isolator banner](docs/assets/codex-session-isolator-banner.svg)
 
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
+[![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
 [![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
 
@@ -19,6 +20,12 @@ When launched through this tool, `CODEX_HOME` is set to:
 - the parent directory (if target is any file)
 
 This isolates Codex state per project without changing global/default behavior.
+
+Practical effect:
+
+- When you open a project via launcher, you see that project's own Codex state.
+- Global/default chat history from other projects is not shown in that isolated session.
+- You can keep separate Codex sign-in/API-key setups per project because each project has its own `.codex` home.
 
 ## Highlights
 
@@ -37,6 +44,7 @@ This isolates Codex state per project without changing global/default behavior.
 - `tools/vsc-launcher.ps1` - Cross-platform wizard helper core.
 - `tools/vsc-launcher.bat` - Wizard helper entrypoint for Windows.
 - `tools/vsc-launcher.sh` - Wizard helper entrypoint for Linux/macOS.
+- `extension/` - VS Code extension (hybrid UX layer over launcher wizard).
 - `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
 - `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
@@ -105,6 +113,29 @@ Wizard defaults:
 - In Remote WSL mode, launcher skips isolated `--user-data-dir` because WSL `code` CLI does not support that option.
 - When `chatgpt.runCodexInWindowsSubsystemForLinux=true` and launch mode is local Windows, launcher configures an isolated `chatgpt.cliExecutable` wrapper in the project profile to force project `CODEX_HOME` for Codex app-server.
 
+### VS Code extension (preview)
+
+The extension adds in-editor commands for wizard UX and launcher operations:
+
+- `Codex Session Isolator: Initialize Launcher`
+- `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Open Launcher Logs`
+- `Codex Session Isolator: Open Launcher Config`
+
+Marketplace identifier:
+
+- `2ma.codex-project-isolator`
+
+Development run:
+
+```bash
+cd extension
+npm install
+npm run compile
+```
+
+Then press `F5` in VS Code from the `extension` folder to run the Extension Development Host.
+
 ### Windows
 
 ```powershell
@@ -130,12 +161,37 @@ chmod +x ./launchers/codex-session-isolator.sh
 ## Documentation
 
 - Usage: `docs/USAGE.md`
+- Extension usage: `docs/EXTENSION.md`
+- Marketplace prep: `docs/MARKETPLACE.md`
+- Trust model: `docs/TRUST.md`
 - Test scenarios: `docs/TESTING.md`
 - Release steps: `docs/RELEASE.md`
 - Contribution guide: `CONTRIBUTING.md`
+- Privacy notice: `PRIVACY.md`
 - Security policy: `SECURITY.md`
+
+## Security and Safety
+
+- Launcher and wizard operations are project-scoped.
+- Project scripts are local-first and do not include built-in telemetry uploads.
+- Before overwriting managed files, safety backups are created under:
+  - `<target>/.vsc_launcher/backups/<timestamp-pid>/`
+- Extension initialization requires trusted workspace and explicit confirmation by default.
+- Marketplace CI generates VSIX checksum files for verification.
+- Security CI workflow runs dependency review, secret scan, script syntax validation, npm audit, and CodeQL analysis.
+
+## Marketplace CI/CD
+
+Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
+
+- Stable publish: create a GitHub Release tag that matches extension version (`v<version>`).
+- Manual publish: run the `Extension Publish` workflow via `workflow_dispatch`.
+- Auto pre-release on `main`: set repository variable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`.
+
+Required repository secret:
+
+- `VSCE_PAT` (Visual Studio Marketplace token for publisher `2ma`)
 
 ## License
 
 MIT
-

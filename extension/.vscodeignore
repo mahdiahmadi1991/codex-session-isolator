@@ -1,0 +1,9 @@
+**/*.ts
+**/*.map
+.vscode/**
+node_modules/**
+.vscode-test/**
+.gitignore
+package-lock.json
+tsconfig.json
+scripts/sync-wizard.mjs

@@ -13,6 +13,29 @@ For the launched VS Code session, it sets:
 
 Outside this launcher, your default Codex behavior remains unchanged.
 
+Session visibility and credentials:
+
+- Launcher sessions read/write state from project-local `.codex`.
+- Previous chats from your default/global Codex home are not shown in the isolated launcher session.
+- You can operate different projects with different Codex account/API-key context because each project uses its own `.codex`.
+
+## VS Code extension (preview)
+
+If you use the extension layer (`extension/`), run these commands from command palette:
+
+- `Codex Session Isolator: Initialize Launcher`
+- `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Open Launcher Logs`
+- `Codex Session Isolator: Open Launcher Config`
+
+Dev setup:
+
+```bash
+cd extension
+npm install
+npm run compile
+```
+
 ## Launcher wizard (recommended)
 
 Use the wizard to generate a project-specific launcher in your target folder.
@@ -59,6 +82,8 @@ Wizard behavior:
 
 - Replaces generated launcher files if they already exist.
 - Updates a managed `.gitignore` block in target folder.
+- Creates safety backups before overwriting managed files:
+  - `.vsc_launcher/backups/<timestamp-pid>/`
 - Always updates `.vscode/settings.json` with:
   - `chatgpt.runCodexInWindowsSubsystemForLinux`
   - `chatgpt.openOnStartup=true`
@@ -116,5 +141,3 @@ chmod +x ./launchers/codex-session-isolator.sh
 - The launcher creates `.codex` inside the target directory if missing.
 - The launcher does not create symlinks to `~/.codex`.
 - For WSL mode, `code` must be available in WSL PATH.
-
-

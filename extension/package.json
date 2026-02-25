@@ -1,0 +1,101 @@
+{
+  "name": "codex-project-isolator",
+  "displayName": "Codex Session Isolator",
+  "description": "Workspace launcher assistant for isolated Codex sessions in VS Code.",
+  "version": "0.1.0",
+  "publisher": "2ma",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mahdiahmadi1991/codex-session-isolator.git"
+  },
+  "homepage": "https://github.com/mahdiahmadi1991/codex-session-isolator",
+  "bugs": {
+    "url": "https://github.com/mahdiahmadi1991/codex-session-isolator/issues"
+  },
+  "qna": "https://github.com/mahdiahmadi1991/codex-session-isolator/discussions",
+  "galleryBanner": {
+    "color": "#081326",
+    "theme": "dark"
+  },
+  "keywords": [
+    "codex",
+    "chatgpt",
+    "vscode",
+    "workspace",
+    "wsl",
+    "launcher",
+    "session-isolation"
+  ],
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onCommand:codexProjectIsolator.initialize",
+    "onCommand:codexProjectIsolator.reopenWithLauncher",
+    "onCommand:codexProjectIsolator.openLogs",
+    "onCommand:codexProjectIsolator.openConfig"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexProjectIsolator.initialize",
+        "title": "Codex Session Isolator: Initialize Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.reopenWithLauncher",
+        "title": "Codex Session Isolator: Reopen With Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.openLogs",
+        "title": "Codex Session Isolator: Open Launcher Logs"
+      },
+      {
+        "command": "codexProjectIsolator.openConfig",
+        "title": "Codex Session Isolator: Open Launcher Config"
+      }
+    ],
+    "configuration": {
+      "title": "Codex Session Isolator",
+      "properties": {
+        "codexProjectIsolator.debugWizardByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run launcher wizard in debug mode by default."
+        },
+        "codexProjectIsolator.closeWindowAfterReopen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Close current VS Code window after launching project launcher."
+        },
+        "codexProjectIsolator.requireConfirmation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require explicit confirmation before initializing a launcher."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "sync:wizard": "node ./scripts/sync-wizard.mjs",
+    "precompile": "npm run sync:wizard",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "prepackage": "npm run sync:wizard",
+    "package": "npx @vscode/vsce package",
+    "prepackage:dry-run": "npm run sync:wizard",
+    "package:dry-run": "npx @vscode/vsce package --pre-release --no-yarn"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.3"
+  }
+}
