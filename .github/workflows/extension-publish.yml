@@ -84,30 +84,28 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare unique pre-release version
+      - name: Validate pre-release version format
         if: steps.channel.outputs.channel == 'pre-release'
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const packagePath = 'extension/package.json';
-          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-          const stable = pkg.version.split('-')[0];
-          const parts = stable.split('.').map((n) => Number(n));
-          if (parts.length !== 3 || parts.some(Number.isNaN)) {
-            throw new Error(`Unsupported version format: ${pkg.version}`);
-          }
-          parts[2] += 1;
-          pkg.version = `${parts.join('.')}-dev.${process.env.GITHUB_RUN_NUMBER}`;
-          fs.writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
-          console.log(`Prepared pre-release version: ${pkg.version}`);
-          NODE
+          version=$(node -p "require('./extension/package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Pre-release publishing requires a plain semver version (x.y.z)."
+            echo "Current version '$version' contains a pre-release suffix which Marketplace does not accept."
+            exit 1
+          fi
+          echo "Using pre-release package version: $version"
 
       - name: Package extension
         working-directory: extension
+        shell: bash
         run: |
           rm -f ./*.vsix ./*.vsix.sha256
-          npm run package
+          if [[ "${{ steps.channel.outputs.channel }}" == "pre-release" ]]; then
+            npx @vscode/vsce package --pre-release --no-dependencies
+          else
+            npx @vscode/vsce package --no-dependencies
+          fi
 
       - name: Generate checksum
         id: package

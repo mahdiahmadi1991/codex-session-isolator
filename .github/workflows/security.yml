@@ -82,9 +82,54 @@ jobs:
 
       - name: Audit dependencies
         working-directory: extension
+        shell: bash
         run: |
           npm ci
-          npm audit --audit-level=high
+          attempt=1
+          max_attempts=2
+          while true; do
+            set +e
+            npm audit --audit-level=high --json > audit.json 2> audit.err
+            status=$?
+            set -e
+
+            if [[ $status -eq 0 ]]; then
+              echo "No high/critical vulnerabilities found."
+              break
+            fi
+
+            set +e
+            node -e "const fs=require('fs');try{const report=JSON.parse(fs.readFileSync('audit.json','utf8'));const vuln=report?.metadata?.vulnerabilities ?? {};const high=Number(vuln.high ?? 0);const critical=Number(vuln.critical ?? 0);console.log('high='+high+' critical='+critical);process.exit((high+critical)>0?10:0);}catch{process.exit(20);}"
+            parsed_status=$?
+            set -e
+
+            if [[ $parsed_status -eq 10 ]]; then
+              echo "High or critical vulnerabilities detected."
+              cat audit.json
+              exit 1
+            fi
+
+            if [[ $parsed_status -eq 0 ]]; then
+              echo "No high/critical vulnerabilities reported."
+              break
+            fi
+
+            if grep -Eqi "audit endpoint returned an error|403 Forbidden|cloudflare|just a moment" audit.err audit.json; then
+              if [[ $attempt -lt $max_attempts ]]; then
+                attempt=$((attempt + 1))
+                echo "npm audit endpoint unavailable; retrying (${attempt}/${max_attempts})..."
+                sleep 10
+                continue
+              fi
+              echo "::warning::npm audit endpoint unavailable on runner; skipping strict audit for this run."
+              break
+            fi
+
+            echo "npm audit failed for an unexpected reason."
+            cat audit.err
+            cat audit.json
+            exit 1
+          done
 
   codeql:
     name: CodeQL Analysis
