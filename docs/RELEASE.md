@@ -38,6 +38,22 @@ Security checks:
   - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.
   - `main` receives only stable-ready merges.
 
+## 2.2) Git graph note (squash merge behavior)
+
+- This repository uses squash merges for promotion/sync PRs.
+- Because of squash commits, `main` and `pre-release` can look diverged in commit graph (different commit SHAs) even when file content is identical.
+- Treat content diff as source of truth, not graph shape.
+
+Quick verification:
+
+```powershell
+git fetch origin --prune
+git diff --name-status origin/main..origin/pre-release
+git diff --name-status origin/pre-release..origin/main
+```
+
+If both diff commands return no files, branches are content-aligned and this state is expected.
+
 ## 3) Commit and tag
 
 ```powershell
