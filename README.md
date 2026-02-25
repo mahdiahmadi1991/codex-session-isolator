@@ -45,6 +45,8 @@ Practical effect:
 - `tools/vsc-launcher.bat` - Wizard helper entrypoint for Windows.
 - `tools/vsc-launcher.sh` - Wizard helper entrypoint for Linux/macOS.
 - `extension/` - VS Code extension (hybrid UX layer over launcher wizard).
+- `AGENTS.md` - Quick onboarding guide for AI coding agents.
+- `codex-session-isolator.code-workspace` - Recommended VS Code workspace for this repository.
 - `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
 - `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
@@ -161,6 +163,7 @@ chmod +x ./launchers/codex-session-isolator.sh
 ## Documentation
 
 - Usage: `docs/USAGE.md`
+- AI agent onboarding: `AGENTS.md`
 - Extension usage: `docs/EXTENSION.md`
 - Marketplace prep: `docs/MARKETPLACE.md`
 - Trust model: `docs/TRUST.md`

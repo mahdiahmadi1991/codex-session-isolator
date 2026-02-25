@@ -10,6 +10,9 @@ All notable changes to this project are documented in this file.
 - Auto-merge workflow for safe PRs (`.github/workflows/auto-merge-safe-prs.yml`) with branch and file-scope safeguards.
 - Main promotion policy workflow (`.github/workflows/main-promotion-policy.yml`) to require `pre-release` as the source branch for PRs into `main` (with explicit hotfix override label).
 - Stable release notes template (`docs/RELEASE_TEMPLATE.md`).
+- AI agent onboarding guide (`AGENTS.md`) with project map, guardrails, and validation checklist.
+- GitHub AI instruction file (`.github/instructions/repo.instructions.md`) for faster, consistent agent onboarding in PR workflows.
+- Repository workspace file (`codex-session-isolator.code-workspace`) with recommended settings and extensions.
 - Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
 - Extension documentation: `docs/EXTENSION.md`.
 - Marketplace preparation guide: `docs/MARKETPLACE.md`.
@@ -27,6 +30,7 @@ All notable changes to this project are documented in this file.
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Safe PR auto-merge guard now disables auto-merge automatically when eligibility is lost, and excludes `.github/workflows/auto-merge-safe-prs.yml` from safe-path allowlist.
 - Main promotion policy now re-evaluates on PR label changes and validates `pre-release` source from the same repository (not forks).
+- Managed `.gitignore` launcher block now ignores both `vsc_launcher.bat` and `vsc_launcher.sh` for cross-platform generated launcher artifacts.
 - Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
 - Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
 - Extension metadata and README content were enriched for Marketplace readiness.
