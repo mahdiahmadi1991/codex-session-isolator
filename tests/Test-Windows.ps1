@@ -172,6 +172,19 @@ New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
 try {
   $env:CSI_FORCE_NO_WSL = "1"
 
+  Write-Host "[test] Case 0: wizard helper usage output"
+  Push-Location $repoRoot
+  try {
+    $helpBat = cmd /c "tools\new-vsc-launcher.bat --help" 2>&1 | Out-String
+    Assert-Contains $helpBat "Usage:" "Batch helper help output mismatch."
+
+    $helpPs = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\new-vsc-launcher.ps1") -Arguments @("--help")
+    Assert-True ($helpPs.ExitCode -eq 0) "PowerShell helper help command failed."
+    Assert-Contains $helpPs.Output "Usage:" "PowerShell helper help output mismatch."
+  } finally {
+    Pop-Location
+  }
+
   Write-Host "[test] Case 1: canonical launcher dry-run (folder + workspace)"
   $case1 = Join-Path $tmpRoot "case1-canonical"
   New-Item -ItemType Directory -Force -Path $case1 | Out-Null

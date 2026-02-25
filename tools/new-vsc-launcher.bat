@@ -1,26 +1,21 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPT_DIR=%~dp0"
-set "TARGET_PATH="
-set "DEBUG_ARG="
+set "FORWARD_ARGS="
+set "CSI_WIZARD_DEBUG=0"
 
 :parse_args
 if "%~1"=="" goto run
 if /I "%~1"=="--debug" (
-  set "DEBUG_ARG=-DebugMode"
+  set "CSI_WIZARD_DEBUG=1"
 ) else (
-  if not defined TARGET_PATH set "TARGET_PATH=%~1"
+  set "FORWARD_ARGS=!FORWARD_ARGS! "%~1""
 )
 shift
 goto parse_args
 
 :run
-if defined TARGET_PATH (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%New-VscLauncherWizard.ps1" -TargetPath "%TARGET_PATH%" %DEBUG_ARG%
-) else (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%New-VscLauncherWizard.ps1" %DEBUG_ARG%
-)
-
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%new-vsc-launcher.ps1"!FORWARD_ARGS!
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%

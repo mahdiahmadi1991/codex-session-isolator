@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LAUNCHER="$REPO_ROOT/launchers/codex-session-isolator.sh"
+WIZARD_HELPER="$REPO_ROOT/tools/new-vsc-launcher.sh"
 
 assert_contains() {
   local text="$1"
@@ -31,6 +32,15 @@ assert_exit_code() {
 
 echo "[test] Bash syntax check"
 bash -n "$LAUNCHER"
+bash -n "$WIZARD_HELPER"
+
+echo "[test] Wizard helper usage output"
+if command -v pwsh >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
+  helper_output="$("$WIZARD_HELPER" --help)"
+  assert_contains "$helper_output" "Usage:" "Wizard helper usage output mismatch."
+else
+  echo "[test] Skip helper runtime test: PowerShell not installed."
+fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

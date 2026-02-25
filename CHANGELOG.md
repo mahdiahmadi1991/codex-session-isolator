@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Added a stronger cross-platform wizard helper (`tools/new-vsc-launcher.ps1`) with Windows/Linux/macOS entrypoints and consistent argument handling (`--help`, `--debug`, `--target`).
 - Remote WSL launcher execution now runs via a temporary UTF-8 bash script file (instead of piping script text), improving reliability on Windows PowerShell.
 - Remote WSL mode no longer creates or uses `.vsc_launcher/vscode-user-data`, since WSL `code` CLI does not support `--user-data-dir`.
 - Launcher logs now include explicit Remote WSL notes for easier troubleshooting.

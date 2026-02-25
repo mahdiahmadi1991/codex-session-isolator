@@ -24,7 +24,22 @@ Windows (batch entrypoint):
 .\tools\new-vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
-PowerShell direct:
+Windows (PowerShell helper):
+
+```powershell
+.\tools\new-vsc-launcher.ps1 "C:\path\to\project"
+.\tools\new-vsc-launcher.ps1 "C:\path\to\project" --debug
+```
+
+Linux/macOS (helper):
+
+```bash
+chmod +x ./tools/new-vsc-launcher.sh
+./tools/new-vsc-launcher.sh "/path/to/project"
+./tools/new-vsc-launcher.sh "/path/to/project" --debug
+```
+
+Direct wizard:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"

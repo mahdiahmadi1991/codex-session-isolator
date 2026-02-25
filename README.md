@@ -32,6 +32,9 @@ This isolates Codex state per project without changing global/default behavior.
 - `launchers/CodexSessionIsolator.ps1` - Primary smart launcher for Windows.
 - `launchers/codex-session-isolator.bat` - Canonical batch launcher for Windows.
 - `launchers/codex-session-isolator.sh` - Canonical launcher for Linux/macOS.
+- `tools/new-vsc-launcher.ps1` - Cross-platform wizard helper core.
+- `tools/new-vsc-launcher.bat` - Wizard helper entrypoint for Windows.
+- `tools/new-vsc-launcher.sh` - Wizard helper entrypoint for Linux/macOS.
 - `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
 - `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
@@ -39,16 +42,37 @@ This isolates Codex state per project without changing global/default behavior.
 
 ## Quick Start
 
-### Generate a launcher (wizard)
+### Wizard helper (recommended)
 
-Windows:
+Windows (CMD):
 
 ```bat
 .\tools\new-vsc-launcher.bat "C:\path\to\project"
 .\tools\new-vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
-PowerShell:
+Windows (PowerShell):
+
+```powershell
+.\tools\new-vsc-launcher.ps1 "C:\path\to\project"
+.\tools\new-vsc-launcher.ps1 "C:\path\to\project" --debug
+```
+
+Linux/macOS:
+
+```bash
+chmod +x ./tools/new-vsc-launcher.sh
+./tools/new-vsc-launcher.sh "/path/to/project"
+./tools/new-vsc-launcher.sh "/path/to/project" --debug
+```
+
+Helper options:
+
+- `--help` show usage
+- `--debug` generate launcher with logging enabled by default
+- `--target <path>` pass target explicitly
+
+Direct wizard (advanced):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
