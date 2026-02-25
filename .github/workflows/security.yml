@@ -99,7 +99,7 @@ jobs:
             fi
 
             set +e
-            node -e "const fs=require('fs');try{const report=JSON.parse(fs.readFileSync('audit.json','utf8'));const vuln=report?.metadata?.vulnerabilities ?? {};const high=Number(vuln.high ?? 0);const critical=Number(vuln.critical ?? 0);console.log('high='+high+' critical='+critical);process.exit((high+critical)>0?10:0);}catch{process.exit(20);}"
+            node -e "const fs=require('fs');try{const report=JSON.parse(fs.readFileSync('audit.json','utf8'));const message=String(report?.message ?? '').toLowerCase();if(report?.error||report?.statusCode||report?.code||message.includes('forbidden')||message.includes('cloudflare')||message.includes('just a moment')){process.exit(30);}const vuln=report?.metadata?.vulnerabilities;if(!vuln||typeof vuln!=='object'){process.exit(20);}const high=Number(vuln.high ?? 0);const critical=Number(vuln.critical ?? 0);console.log('high='+high+' critical='+critical);process.exit((high+critical)>0?10:0);}catch{process.exit(20);}"
             parsed_status=$?
             set -e
 
@@ -111,6 +111,17 @@ jobs:
 
             if [[ $parsed_status -eq 0 ]]; then
               echo "No high/critical vulnerabilities reported."
+              break
+            fi
+
+            if [[ $parsed_status -eq 30 ]]; then
+              if [[ $attempt -lt $max_attempts ]]; then
+                attempt=$((attempt + 1))
+                echo "npm audit endpoint unavailable; retrying (${attempt}/${max_attempts})..."
+                sleep 10
+                continue
+              fi
+              echo "::warning::npm audit endpoint unavailable on runner; skipping strict audit for this run."
               break
             fi
 
