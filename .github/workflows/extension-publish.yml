@@ -13,6 +13,10 @@ on:
         options:
           - pre-release
           - stable
+      release_tag:
+        description: Required for stable manual publish. Must equal v<extension.version> and exist in git tags.
+        required: false
+        type: string
   push:
     branches: ["pre-release"]
 
@@ -33,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -67,6 +73,48 @@ jobs:
           if [[ -z "${VSCE_PAT:-}" ]]; then
             echo "Missing required repository secret: VSCE_PAT"
             echo "Create it from a Visual Studio Marketplace Personal Access Token."
+            exit 1
+          fi
+
+      - name: Validate stable publish source and release tag policy
+        if: steps.channel.outputs.channel == 'stable'
+        shell: bash
+        run: |
+          version=$(node -p "require('./extension/package.json').version")
+          expected_tag="v${version}"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+              echo "Stable workflow_dispatch runs must target ref 'main'. Current ref: ${GITHUB_REF_NAME}"
+              exit 1
+            fi
+
+            release_tag="${{ github.event.inputs.release_tag }}"
+            if [[ -z "${release_tag}" ]]; then
+              echo "Missing required workflow input: release_tag"
+              echo "For stable manual publish, provide release_tag=${expected_tag}."
+              exit 1
+            fi
+
+            if [[ "${release_tag}" != "${expected_tag}" ]]; then
+              echo "release_tag (${release_tag}) must match extension version tag (${expected_tag})."
+              exit 1
+            fi
+
+            git fetch --force --tags origin
+            if ! git rev-parse -q --verify "refs/tags/${release_tag}" >/dev/null; then
+              echo "Tag ${release_tag} does not exist in git."
+              exit 1
+            fi
+          fi
+
+      - name: Validate extension preview flag for stable publish
+        if: steps.channel.outputs.channel == 'stable'
+        shell: bash
+        run: |
+          preview=$(node -p "Boolean(require('./extension/package.json').preview)")
+          if [[ "${preview}" == "true" ]]; then
+            echo "Stable publish requires extension/package.json preview=false (or omitted)."
             exit 1
           fi
 
