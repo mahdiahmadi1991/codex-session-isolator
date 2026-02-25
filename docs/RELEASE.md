@@ -65,4 +65,3 @@ git push origin vX.Y.Z
 - Stable: publishing is automatic on `release.published` via `.github/workflows/extension-publish.yml`.
 - Manual: run workflow `Extension Publish` (`workflow_dispatch`) and choose `stable` or `pre-release`.
 - Workflow also produces VSIX checksum (`*.vsix.sha256`); publish these files with stable release assets.
-

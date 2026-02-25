@@ -113,4 +113,3 @@ Linux/macOS:
 sha256sum codex-session-isolator-<version>.vsix
 cat codex-session-isolator-<version>.vsix.sha256
 ```
-
