@@ -2,13 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.3.2] - 2026-02-25
 
 ### Changed
 
 - Windows test suite now validates `--target` argument error handling and generated-wizard flow through `--target` for better helper coverage.
 - Manual testing guide was corrected to match canonical launcher behavior and conditional WSL prompts.
 - README now clarifies direct wizard PowerShell requirement.
+- Added a project banner image to README for clearer project branding.
 
 ## [0.3.1] - 2026-02-25
 
@@ -95,5 +96,3 @@ All notable changes to this project are documented in this file.
   - `launchers/codex-workspace-launcher.sh`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.
-
-

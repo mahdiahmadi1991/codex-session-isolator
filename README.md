@@ -1,5 +1,7 @@
 # Codex Session Isolator
 
+![Codex Session Isolator banner](docs/assets/codex-session-isolator-banner.svg)
+
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
 [![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
@@ -136,5 +138,4 @@ chmod +x ./launchers/codex-session-isolator.sh
 ## License
 
 MIT
-
 
