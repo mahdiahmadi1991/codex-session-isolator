@@ -19,7 +19,8 @@ Thanks for contributing.
 - `pre-release` is the integration branch for all feature/fix work.
 - `main` accepts promotion PRs from `pre-release` only.
 - Emergency exception:
-  - open PR to `main` from hotfix branch
+  - create hotfix branch from `main` (for example: `hotfix/<issue-id>`)
+  - open PR to `main` from that hotfix branch
   - add label `allow-main-hotfix`
   - after merge, open sync PR `main` -> `pre-release`
 
