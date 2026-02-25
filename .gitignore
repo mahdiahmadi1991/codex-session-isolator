@@ -2,9 +2,15 @@
 .DS_Store
 Thumbs.db
 
-# Runtime and local state
+# >>> codex-session-isolator >>>
+# Managed by Codex Session Isolator launcher wizard.
+vsc_launcher.bat
+vsc_launcher.sh
+.vsc_launcher/
 .codex/
-**/.codex/
+# <<< codex-session-isolator <<<
+
+# Runtime and local state
 *.log
 
 # IDE

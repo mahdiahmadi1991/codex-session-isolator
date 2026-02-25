@@ -17,9 +17,9 @@ The extension provides a hybrid UX:
 
 ## Settings
 
-- `codexProjectIsolator.debugWizardByDefault` (default: `false`)
-- `codexProjectIsolator.closeWindowAfterReopen` (default: `true`)
-- `codexProjectIsolator.requireConfirmation` (default: `true`)
+- `codexSessionIsolator.debugWizardByDefault` (default: `false`)
+- `codexSessionIsolator.closeWindowAfterReopen` (default: `true`)
+- `codexSessionIsolator.requireConfirmation` (default: `true`)
 
 ## Development
 
@@ -38,6 +38,11 @@ Run Extension Development Host:
 
 - Extension requires PowerShell (`powershell` or `pwsh`).
 - On Windows, WSL-related prompts are shown only when WSL is available.
+- Extension wizard default answers on Windows+WSL:
+  - Remote WSL launch: `Yes`
+  - Codex run in WSL: `Yes`
+  - Distro default: Windows default distro
+  - Ignore Codex sessions in gitignore: `No`
 - Generated files remain project-local (`vsc_launcher.*`, `.vsc_launcher/`, `.codex/` policy).
 - Bundled wizard script is synced from `tools/vsc-launcher-wizard.ps1` via `extension/scripts/sync-wizard.mjs`.
 - Extension operations require a trusted workspace.

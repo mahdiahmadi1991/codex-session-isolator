@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.
+- Auto-merge workflow for safe PRs (`.github/workflows/auto-merge-safe-prs.yml`) with branch and file-scope safeguards.
+- Main promotion policy workflow (`.github/workflows/main-promotion-policy.yml`) to require `pre-release` as the source branch for PRs into `main` (with explicit hotfix override label).
+- Stable release notes template (`docs/RELEASE_TEMPLATE.md`).
+- AI agent onboarding guide (`AGENTS.md`) with project map, guardrails, and validation checklist.
+- GitHub AI instruction file (`.github/instructions/repo.instructions.md`) for faster, consistent agent onboarding in PR workflows.
+- Repository workspace file (`codex-session-isolator.code-workspace`) with recommended settings and extensions.
 - Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
 - Extension documentation: `docs/EXTENSION.md`.
 - Marketplace preparation guide: `docs/MARKETPLACE.md`.
@@ -23,7 +29,7 @@ All notable changes to this project are documented in this file.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Extension metadata and README content were enriched for Marketplace readiness.
-- Extension identifier namespace was refined to `codexProjectIsolator` and package id to `codex-project-isolator`.
+- Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
 - Marketplace hero image was regenerated at larger dimensions to prevent text clipping.
 - Wizard now creates safety backups before overwriting managed files under `.vsc_launcher/backups/<timestamp-pid>/`.

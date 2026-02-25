@@ -4,7 +4,7 @@ This checklist prepares the `extension/` package for publishing.
 
 Current extension identifier:
 
-- `2ma.codex-project-isolator`
+- `2ma.codex-session-isolator`
 
 ## Metadata checklist
 
@@ -30,13 +30,13 @@ npm run package
 
 Output:
 
-- `extension/codex-project-isolator-<version>.vsix`
+- `extension/codex-session-isolator-<version>.vsix`
 
 ## Local install test
 
 ```bash
-code --install-extension extension/codex-project-isolator-<version>.vsix --force
-code --list-extensions | findstr codex-project-isolator
+code --install-extension extension/codex-session-isolator-<version>.vsix --force
+code --list-extensions | findstr codex-session-isolator
 ```
 
 ## Manual smoke test
@@ -101,13 +101,13 @@ After downloading release assets:
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\codex-project-isolator-<version>.vsix -Algorithm SHA256
-Get-Content .\codex-project-isolator-<version>.vsix.sha256
+Get-FileHash .\codex-session-isolator-<version>.vsix -Algorithm SHA256
+Get-Content .\codex-session-isolator-<version>.vsix.sha256
 ```
 
 Linux/macOS:
 
 ```bash
-sha256sum codex-project-isolator-<version>.vsix
-cat codex-project-isolator-<version>.vsix.sha256
+sha256sum codex-session-isolator-<version>.vsix
+cat codex-session-isolator-<version>.vsix.sha256
 ```

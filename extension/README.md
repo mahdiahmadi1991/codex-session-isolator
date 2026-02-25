@@ -44,6 +44,15 @@ Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
 
+Default wizard answers on Windows + WSL:
+
+- Remote WSL launch: `Yes`
+- Codex run in WSL: `Yes`
+- Distro default: Windows default distro
+- Ignore Codex chat sessions in gitignore: `No`
+
+If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
+
 ## Requirements
 
 - VS Code 1.95+
@@ -52,9 +61,9 @@ Expected value:
 
 ## Settings
 
-- `codexProjectIsolator.debugWizardByDefault`
-- `codexProjectIsolator.closeWindowAfterReopen`
-- `codexProjectIsolator.requireConfirmation`
+- `codexSessionIsolator.debugWizardByDefault`
+- `codexSessionIsolator.closeWindowAfterReopen`
+- `codexSessionIsolator.requireConfirmation`
 
 ## Security and Privacy
 

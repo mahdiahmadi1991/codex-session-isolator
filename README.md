@@ -45,6 +45,8 @@ Practical effect:
 - `tools/vsc-launcher.bat` - Wizard helper entrypoint for Windows.
 - `tools/vsc-launcher.sh` - Wizard helper entrypoint for Linux/macOS.
 - `extension/` - VS Code extension (hybrid UX layer over launcher wizard).
+- `AGENTS.md` - Quick onboarding guide for AI coding agents.
+- `codex-session-isolator.code-workspace` - Recommended VS Code workspace for this repository.
 - `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
 - `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
@@ -103,6 +105,11 @@ Wizard defaults:
 - It asks workspace selection only when more than one workspace file is found.
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
+- First-run defaults on Windows (when WSL is available) are:
+  - `Launch VS Code in Remote WSL mode = Yes`
+  - `Set Codex to run in WSL for this project = Yes`
+  - WSL distro default = your Windows default distro (`wsl --status`)
+  - `Ignore Codex chat sessions in gitignore = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
 - Wizard always writes:
@@ -124,7 +131,7 @@ The extension adds in-editor commands for wizard UX and launcher operations:
 
 Marketplace identifier:
 
-- `2ma.codex-project-isolator`
+- `2ma.codex-session-isolator`
 
 Development run:
 
@@ -150,6 +157,25 @@ Or with wrapper:
 .\launchers\codex-session-isolator.bat "C:\dev\my-app"
 ```
 
+### Windows -> WSL project target
+
+If your project is inside WSL, pass a WSL UNC path:
+
+```bat
+.\tools\vsc-launcher.bat "\\wsl$\Ubuntu-24.04\home\user\my-app"
+```
+
+Recommended:
+
+1. Keep `Launch VS Code in Remote WSL mode` on `Yes` (default).
+2. Keep `Set Codex to run in WSL` on `Yes` (default).
+3. Reopen with generated `vsc_launcher.bat`.
+
+Note:
+
+- If you open `\\wsl$\...` in a local Windows window, VS Code may show the hint to reopen in WSL. This is expected.
+- Remote WSL mode avoids that mismatch and keeps terminal/extensions/Codex in Linux context.
+
 ### Linux/macOS
 
 ```bash
@@ -161,11 +187,13 @@ chmod +x ./launchers/codex-session-isolator.sh
 ## Documentation
 
 - Usage: `docs/USAGE.md`
+- AI agent onboarding: `AGENTS.md`
 - Extension usage: `docs/EXTENSION.md`
 - Marketplace prep: `docs/MARKETPLACE.md`
 - Trust model: `docs/TRUST.md`
 - Test scenarios: `docs/TESTING.md`
 - Release steps: `docs/RELEASE.md`
+- Release notes template: `docs/RELEASE_TEMPLATE.md`
 - Contribution guide: `CONTRIBUTING.md`
 - Privacy notice: `PRIVACY.md`
 - Security policy: `SECURITY.md`

@@ -36,6 +36,18 @@ function Assert-NotContains {
   }
 }
 
+function Assert-HiddenOnWindows {
+  param(
+    [string]$Path,
+    [string]$Message
+  )
+
+  Assert-True (Test-Path -LiteralPath $Path -PathType Any) ($Message + " (path not found: $Path)")
+  $item = Get-Item -LiteralPath $Path -Force
+  $isHidden = [bool]($item.Attributes -band [IO.FileAttributes]::Hidden)
+  Assert-True $isHidden ($Message + " (attributes: " + $item.Attributes + ")")
+}
+
 function Convert-WindowsPathToLinuxPath {
   param([string]$InputPath)
 
@@ -49,6 +61,47 @@ function Convert-WindowsPathToLinuxPath {
   }
 
   return ($InputPath -replace '\\', '/')
+}
+
+function Test-HostWslAvailable {
+  try {
+    $cmd = Get-Command wsl.exe -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) {
+      return $false
+    }
+
+    $null = cmd /c "wsl --status >nul 2>nul"
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    return $false
+  }
+}
+
+function Get-PrimaryWslDistro {
+  try {
+    return (
+      wsl.exe -l -q 2>$null |
+      ForEach-Object { ($_ -replace [string][char]0, "").Trim() } |
+      Where-Object { $_ -and $_ -notmatch '^docker-desktop(-data)?$' } |
+      Select-Object -First 1
+    )
+  } catch {
+    return $null
+  }
+}
+
+function Get-DefaultWslDistro {
+  try {
+    $status = (& wsl.exe --status 2>$null | Out-String)
+    $normalized = $status -replace [string][char]0, ""
+    $match = [regex]::Match($normalized, '(?im)Default\s*Distribution:\s*([^\r\n]+)')
+    if ($match.Success) {
+      return $match.Groups[1].Value.Trim()
+    }
+  } catch {
+  }
+
+  return $null
 }
 
 function Get-LatestLog {
@@ -134,6 +187,39 @@ function Invoke-Wizard {
   }
 }
 
+function Invoke-WizardScriptDirect {
+  param(
+    [string]$RepoRoot,
+    [string]$ScriptPath,
+    [string]$TargetPath,
+    [string[]]$Responses,
+    [switch]$DebugMode
+  )
+
+  $inputFile = Join-Path $env:TEMP ("csi-wizard-input-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  try {
+    $payload = if ($Responses.Count -gt 0) { ($Responses -join "`r`n") + "`r`n" } else { "" }
+    Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
+
+    $debugArg = if ($DebugMode) { " -DebugMode" } else { "" }
+    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File ""$ScriptPath"" -TargetPath ""$TargetPath""" + $debugArg + " < ""$inputFile"""
+
+    Push-Location $RepoRoot
+    try {
+      cmd /c $cmd | Out-Host
+      if ($LASTEXITCODE -ne 0) {
+        throw "Wizard script failed with exit code $LASTEXITCODE for target $TargetPath"
+      }
+    } finally {
+      Pop-Location
+    }
+  } finally {
+    if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
+      Remove-Item -LiteralPath $inputFile -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Invoke-RunnerDryRun {
   param([string]$RunnerPath)
 
@@ -191,6 +277,20 @@ try {
     Pop-Location
   }
 
+  Write-Host "[test] Case 0.1: bundled wizard parity and hidden-dot paths"
+  $toolWizardPath = Join-Path $repoRoot "tools\vsc-launcher-wizard.ps1"
+  $bundledWizardPath = Join-Path $repoRoot "extension\scripts\vsc-launcher-wizard.ps1"
+  $toolHash = (Get-FileHash -LiteralPath $toolWizardPath -Algorithm SHA256).Hash
+  $bundledHash = (Get-FileHash -LiteralPath $bundledWizardPath -Algorithm SHA256).Hash
+  Assert-True ($toolHash -eq $bundledHash) "Bundled wizard script is out of sync with tools wizard."
+
+  $case01 = Join-Path $tmpRoot "case01-bundled-wizard"
+  New-Item -ItemType Directory -Force -Path $case01 | Out-Null
+  Set-Content -LiteralPath (Join-Path $case01 "bundled.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
+  Invoke-WizardScriptDirect -RepoRoot $repoRoot -ScriptPath $bundledWizardPath -TargetPath $case01 -Responses @("y")
+  Assert-HiddenOnWindows -Path (Join-Path $case01 ".vsc_launcher") -Message "Expected .vsc_launcher to be hidden on Windows."
+  Assert-HiddenOnWindows -Path (Join-Path $case01 ".vscode") -Message "Expected .vscode to be hidden on Windows."
+
   Write-Host "[test] Case 1: canonical launcher dry-run (folder + workspace)"
   $case1 = Join-Path $tmpRoot "case1-canonical"
   New-Item -ItemType Directory -Force -Path $case1 | Out-Null
@@ -225,6 +325,8 @@ try {
   Assert-True (Test-Path -LiteralPath $launcher2 -PathType Leaf) "Generated launcher not found."
   Assert-True (Test-Path -LiteralPath $runner2 -PathType Leaf) "Generated runner not found."
   Assert-True (Test-Path -LiteralPath $config2 -PathType Leaf) "Generated config not found."
+  Assert-HiddenOnWindows -Path $meta2 -Message "Expected metadata directory to be hidden on Windows."
+  Assert-HiddenOnWindows -Path (Join-Path $case2 ".vscode") -Message "Expected .vscode directory to be hidden on Windows."
   Assert-True (Test-Path -LiteralPath $defaults2 -PathType Leaf) "Wizard defaults file not found."
   Assert-True (Test-Path -LiteralPath $vscodeSettings2 -PathType Leaf) ".vscode/settings.json not found."
   Assert-True (Test-Path -LiteralPath $gitignore2 -PathType Leaf) ".gitignore not found."
@@ -397,6 +499,150 @@ try {
   Assert-True ($settingsA.'chatgpt.cliExecutable' -ne $settingsB.'chatgpt.cliExecutable') "Concurrent projects should not share chatgpt.cliExecutable path."
   Assert-Contains $settingsA.'chatgpt.cliExecutable' "/project-a/" "Project A cliExecutable path mismatch."
   Assert-Contains $settingsB.'chatgpt.cliExecutable' "/project-b/" "Project B cliExecutable path mismatch."
+
+  Write-Host "[test] Case 6: wizard target in WSL UNC path (mode matrix)"
+  if (-not (Test-HostWslAvailable)) {
+    Write-Host "[test] Case 6 skipped: WSL is not available on this host."
+  } else {
+    $case6Distro = Get-DefaultWslDistro
+    if ([string]::IsNullOrWhiteSpace($case6Distro)) {
+      $case6Distro = Get-PrimaryWslDistro
+    }
+    if ([string]::IsNullOrWhiteSpace($case6Distro)) {
+      Write-Host "[test] Case 6 skipped: no non-docker WSL distro found."
+    } else {
+      $case6LinuxRoot = "/tmp/csi-windows-tests-wsl-" + [Guid]::NewGuid().ToString("N")
+      $case6UncRoot = "\\wsl$\$case6Distro" + ($case6LinuxRoot -replace "/", "\")
+      $case6WorkspacePath = Join-Path $case6UncRoot "sample.code-workspace"
+      $case6ForceNoWsl = $env:CSI_FORCE_NO_WSL
+
+      try {
+        & wsl.exe -d $case6Distro -- mkdir -p $case6LinuxRoot | Out-Null
+        New-Item -ItemType Directory -Force -Path $case6UncRoot | Out-Null
+        Set-Content -LiteralPath $case6WorkspacePath -Value '{"folders":[{"path":"."}]}' -NoNewline
+
+        Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
+        # Accept wizard defaults (include extra empty line for optional distro prompt when multiple distros exist).
+        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case6UncRoot -Responses @("", "", "", "") -DebugMode -UseTargetFlag
+
+        $case6Runner = Join-Path $case6UncRoot ".vsc_launcher\runner.ps1"
+        $case6Config = Join-Path $case6UncRoot ".vsc_launcher\config.json"
+        $case6Wrapper = Join-Path $case6UncRoot ".vsc_launcher\codex-wsl-wrapper.sh"
+        $case6ProfileSettings = Join-Path $case6UncRoot ".vsc_launcher\vscode-user-data\User\settings.json"
+        $case6LogsDir = Join-Path $case6UncRoot ".vsc_launcher\logs"
+        $case6Gitignore = Join-Path $case6UncRoot ".gitignore"
+
+        Assert-True (Test-Path -LiteralPath $case6Runner -PathType Leaf) "Case 6 runner not generated."
+        Assert-True (Test-Path -LiteralPath $case6Config -PathType Leaf) "Case 6 config not generated."
+        Assert-True (Test-Path -LiteralPath $case6Gitignore -PathType Leaf) "Case 6 .gitignore not generated."
+
+        $case6ConfigDefaults = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
+        Assert-True ([bool]$case6ConfigDefaults.useRemoteWsl) "Case 6 default should enable Remote WSL."
+        Assert-True ([bool]$case6ConfigDefaults.codexRunInWsl) "Case 6 default should enable Codex-in-WSL."
+        Assert-True ($case6ConfigDefaults.wslDistro -eq $case6Distro) "Case 6 default distro should match Windows default distro."
+
+        $case6GitignoreText = Get-Content -LiteralPath $case6Gitignore -Raw
+        Assert-Contains $case6GitignoreText ".codex/*" "Case 6 default should keep sessions tracked (.codex/* strategy)."
+        Assert-Contains $case6GitignoreText "!.codex/sessions/**" "Case 6 default should keep sessions unignored."
+        Assert-Contains $case6GitignoreText "!.codex/archived_sessions/**" "Case 6 default should keep archived sessions unignored."
+
+        function Set-Case6Config {
+          param(
+            [bool]$UseRemoteWsl,
+            [bool]$CodexRunInWsl
+          )
+
+          $cfg = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
+          $cfg.useRemoteWsl = $UseRemoteWsl
+          $cfg.codexRunInWsl = $CodexRunInWsl
+          $cfg.wslDistro = if ($UseRemoteWsl) { $case6Distro } else { "" }
+          Set-Content -LiteralPath $case6Config -Value ($cfg | ConvertTo-Json -Depth 20)
+        }
+
+        function Assert-Case6RemoteResult {
+          param(
+            $Result,
+            [string]$Label
+          )
+
+          if ($Result.ExitCode -eq 0) {
+            return
+          }
+
+          $known = @(
+            "VS Code command 'code' not found in WSL PATH.",
+            "Failed to launch VS Code in WSL mode."
+          )
+          foreach ($pattern in $known) {
+            if ($Result.Output.Contains($pattern)) {
+              return
+            }
+          }
+
+          throw "Assertion failed: $Label`nUnexpected remote output: $($Result.Output)"
+        }
+
+        # Matrix A: VS Code local Windows, Codex local (Run in WSL = false)
+        Set-Case6Config -UseRemoteWsl $false -CodexRunInWsl $false
+        $case6LocalNoWsl = Invoke-RunnerWithMockCode -RunnerPath $case6Runner
+        Assert-True ($case6LocalNoWsl.ExitCode -eq 0) ("Case 6A local/no-WSL failed. Output: " + $case6LocalNoWsl.Output)
+        Assert-Contains $case6LocalNoWsl.Output "mock-code --new-window --user-data-dir" "Case 6A should use isolated user-data-dir launch."
+        Assert-True (Test-Path -LiteralPath $case6ProfileSettings -PathType Leaf) "Case 6A isolated profile settings not generated."
+        $case6ProfileNoWsl = Get-Content -LiteralPath $case6ProfileSettings -Raw | ConvertFrom-Json
+        $case6ProfileNoWslPropNames = @($case6ProfileNoWsl.PSObject.Properties | ForEach-Object { $_.Name })
+        if ($case6ProfileNoWslPropNames -contains "chatgpt.cliExecutable") {
+          $case6CliNoWsl = [string]$case6ProfileNoWsl.'chatgpt.cliExecutable'
+          Assert-True ([string]::IsNullOrWhiteSpace($case6CliNoWsl) -or -not $case6CliNoWsl.Contains("codex-wsl-wrapper.sh")) "Case 6A should not keep WSL wrapper override."
+        }
+        $case6LogAPath = Get-LatestLog -LogsDir $case6LogsDir
+        $case6LogA = Get-Content -LiteralPath $case6LogAPath -Raw
+        Assert-Contains $case6LogA "Mode=Local" "Case 6A log should show local mode."
+        Assert-NotContains $case6LogA "Configured chatgpt.cliExecutable=" "Case 6A should not configure cliExecutable wrapper."
+
+        # Matrix B: VS Code local Windows, Codex in WSL (Run in WSL = true)
+        Set-Case6Config -UseRemoteWsl $false -CodexRunInWsl $true
+        $case6LocalWithWsl = Invoke-RunnerWithMockCode -RunnerPath $case6Runner
+        Assert-True ($case6LocalWithWsl.ExitCode -eq 0) ("Case 6B local/WSL failed. Output: " + $case6LocalWithWsl.Output)
+        Assert-Contains $case6LocalWithWsl.Output "mock-code --new-window --user-data-dir" "Case 6B should use isolated user-data-dir launch."
+        Assert-True (Test-Path -LiteralPath $case6Wrapper -PathType Leaf) "Case 6B wrapper file not generated."
+        $case6ProfileWithWsl = Get-Content -LiteralPath $case6ProfileSettings -Raw | ConvertFrom-Json
+        $case6CliWithWsl = [string]$case6ProfileWithWsl.'chatgpt.cliExecutable'
+        Assert-Contains $case6CliWithWsl "/tmp/csi-windows-tests-wsl-" "Case 6B cliExecutable should map to WSL Linux path."
+        Assert-Contains $case6CliWithWsl "/.vsc_launcher/codex-wsl-wrapper.sh" "Case 6B cliExecutable should point to wrapper script."
+        $case6LogBPath = Get-LatestLog -LogsDir $case6LogsDir
+        $case6LogB = Get-Content -LiteralPath $case6LogBPath -Raw
+        Assert-Contains $case6LogB "Configured chatgpt.cliExecutable=" "Case 6B should configure cliExecutable wrapper."
+        Assert-Contains $case6LogB "CODEX_HOME=" "Case 6B log should include CODEX_HOME entry."
+
+        # Matrix C: VS Code in Remote WSL, Codex local flag (Run in WSL = false)
+        Set-Case6Config -UseRemoteWsl $true -CodexRunInWsl $false
+        $case6RemoteNoWsl = Invoke-ExternalPowerShellScript -ScriptPath $case6Runner -Arguments @("-Log")
+        Assert-Case6RemoteResult -Result $case6RemoteNoWsl -Label "Case 6C remote/no-WSL"
+        $case6LogCPath = Get-LatestLog -LogsDir $case6LogsDir
+        $case6LogC = Get-Content -LiteralPath $case6LogCPath -Raw
+        Assert-Contains $case6LogC ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6C log should show remote WSL mode."
+        Assert-Contains $case6LogC "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6C should log Linux target path."
+        Assert-Contains $case6LogC "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode." "Case 6C should skip isolated user-data-dir in remote mode."
+
+        # Matrix D: VS Code in Remote WSL, Codex in WSL flag (Run in WSL = true)
+        Set-Case6Config -UseRemoteWsl $true -CodexRunInWsl $true
+        $case6RemoteWithWsl = Invoke-ExternalPowerShellScript -ScriptPath $case6Runner -Arguments @("-Log")
+        Assert-Case6RemoteResult -Result $case6RemoteWithWsl -Label "Case 6D remote/WSL"
+        $case6LogDPath = Get-LatestLog -LogsDir $case6LogsDir
+        $case6LogD = Get-Content -LiteralPath $case6LogDPath -Raw
+        Assert-Contains $case6LogD ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6D log should show remote WSL mode."
+        Assert-Contains $case6LogD "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6D should log Linux target path."
+      } finally {
+        if ([string]::IsNullOrWhiteSpace($case6ForceNoWsl)) {
+          Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
+        } else {
+          $env:CSI_FORCE_NO_WSL = $case6ForceNoWsl
+        }
+
+        & wsl.exe -d $case6Distro -- rm -rf $case6LinuxRoot 2>$null | Out-Null
+      }
+    }
+  }
 
   Write-Host "[test] All Windows tests passed."
 } finally {

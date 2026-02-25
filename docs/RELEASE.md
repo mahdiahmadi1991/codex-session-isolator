@@ -27,11 +27,12 @@ Security checks:
 
 - Confirm `README.md`, `docs/USAGE.md`, and `docs/TESTING.md` match current launcher behavior.
 - Confirm `CHANGELOG.md` contains release notes for the version to publish.
+- Prepare release notes from `docs/RELEASE_TEMPLATE.md`.
 
 ## 2.1) Extension marketplace checks
 
 - Confirm `extension/package.json` version is set for target stable release.
-- Confirm extension id is `2ma.codex-project-isolator`.
+- Confirm extension id is `2ma.codex-session-isolator`.
 - Confirm repository secret `VSCE_PAT` is configured.
 - Confirm branch model is followed:
   - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.

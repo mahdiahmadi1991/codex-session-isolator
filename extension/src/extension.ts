@@ -16,12 +16,17 @@ type ProcessResult = {
   stderr: string;
 };
 
-const EXTENSION_NAMESPACE = "codexProjectIsolator";
+const EXTENSION_NAMESPACE = "codexSessionIsolator";
+const LEGACY_NAMESPACE = "codexProjectIsolator";
+
 const CMD_INITIALIZE = `${EXTENSION_NAMESPACE}.initialize`;
 const CMD_REOPEN = `${EXTENSION_NAMESPACE}.reopenWithLauncher`;
 const CMD_OPEN_LOGS = `${EXTENSION_NAMESPACE}.openLogs`;
 const CMD_OPEN_CONFIG = `${EXTENSION_NAMESPACE}.openConfig`;
-const LEGACY_NAMESPACE = "codexSessionIsolator";
+const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
+const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
+const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
+const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
 
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
@@ -41,41 +46,41 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Codex Session Isolator");
   context.subscriptions.push(output);
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_INITIALIZE, async () => {
-      await initializeLauncher(context, output);
-    })
-  );
+  const initializeHandler = async () => {
+    await initializeLauncher(context, output);
+  };
+  const reopenHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await reopenWithLauncher(root);
+  };
+  const openLogsHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await openLogsFolder(root);
+  };
+  const openConfigHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await openConfigFile(root);
+  };
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_REOPEN, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await reopenWithLauncher(root);
-    })
-  );
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_REOPEN, reopenHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_LOGS, openLogsHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_CONFIG, openConfigHandler));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_OPEN_LOGS, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await openLogsFolder(root);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_OPEN_CONFIG, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await openConfigFile(root);
-    })
-  );
+  // Keep legacy command IDs active so older keybindings/tasks still work after renaming.
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_REOPEN, reopenHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_LOGS, openLogsHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_CONFIG, openConfigHandler));
 }
 
 export function deactivate(): void {}
@@ -202,7 +207,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
   if (wslAvailable) {
     const useRemoteWsl = await promptBoolean(
       "Launch VS Code in Remote WSL mode?",
-      defaults.useRemoteWsl ?? false
+      defaults.useRemoteWsl ?? true
     );
     if (useRemoteWsl === undefined) {
       return undefined;
@@ -212,7 +217,15 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
     if (useRemoteWsl) {
       const distros = await getWslDistros();
       if (distros.length > 1) {
-        const distroIndex = await promptWslDistroSelection(distros);
+        const defaultDistro = await getDefaultWslDistro();
+        let defaultIndex = distros.findIndex((name) =>
+          !!defaultDistro && name.toLowerCase() === defaultDistro.toLowerCase()
+        );
+        if (defaultIndex < 0) {
+          defaultIndex = 0;
+        }
+
+        const distroIndex = await promptWslDistroSelection(distros, defaultIndex);
         if (distroIndex === undefined) {
           return undefined;
         }
@@ -222,7 +235,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
 
     const codexRunInWsl = await promptBoolean(
       "Set Codex to run in WSL for this project?",
-      defaults.codexRunInWsl ?? useRemoteWsl
+      defaults.codexRunInWsl ?? true
     );
     if (codexRunInWsl === undefined) {
       return undefined;
@@ -232,7 +245,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
 
   const ignoreSessions = await promptBoolean(
     "Ignore Codex chat sessions in gitignore?",
-    defaults.ignoreSessions ?? true
+    defaults.ignoreSessions ?? false
   );
   if (ignoreSessions === undefined) {
     return undefined;
@@ -257,10 +270,17 @@ async function promptWorkspaceSelection(root: string, workspaceFiles: string[]):
   return selected?.index;
 }
 
-async function promptWslDistroSelection(distros: string[]): Promise<number | undefined> {
-  const picks = distros.map((name, index) => ({ label: name, index }));
+async function promptWslDistroSelection(
+  distros: string[],
+  defaultIndex: number
+): Promise<number | undefined> {
+  const picks = distros.map((name, index) => ({
+    label: name,
+    description: index === defaultIndex ? "Windows default distro" : undefined,
+    index
+  }));
   const selected = await vscode.window.showQuickPick(picks, {
-    placeHolder: "Select WSL distro for Remote WSL launch",
+    placeHolder: `Select WSL distro for Remote WSL launch (default: ${distros[defaultIndex]})`,
     canPickMany: false
   });
 
@@ -331,6 +351,17 @@ async function getWslDistros(): Promise<string[]> {
     .split(/\r?\n/)
     .map((line) => line.replace(/\u0000/g, "").trim())
     .filter((line) => line.length > 0 && !/^docker-desktop(-data)?$/i.test(line));
+}
+
+async function getDefaultWslDistro(): Promise<string | undefined> {
+  const result = await runCommand("wsl.exe", ["--status"]);
+  if (result.code !== 0) {
+    return undefined;
+  }
+
+  const normalized = result.stdout.replace(/\u0000/g, "");
+  const match = normalized.match(/Default\s*Distribution:\s*([^\r\n]+)/i);
+  return match?.[1]?.trim();
 }
 
 async function runCommand(command: string, args: string[]): Promise<ProcessResult> {
