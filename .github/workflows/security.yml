@@ -99,19 +99,7 @@ jobs:
             fi
 
             set +e
-            node <<'NODE'
-            const fs = require('fs');
-            try {
-              const report = JSON.parse(fs.readFileSync('audit.json', 'utf8'));
-              const vuln = report?.metadata?.vulnerabilities ?? {};
-              const high = Number(vuln.high ?? 0);
-              const critical = Number(vuln.critical ?? 0);
-              console.log(`high=${high} critical=${critical}`);
-              process.exit((high + critical) > 0 ? 10 : 0);
-            } catch {
-              process.exit(20);
-            }
-            NODE
+            node -e "const fs=require('fs');try{const report=JSON.parse(fs.readFileSync('audit.json','utf8'));const vuln=report?.metadata?.vulnerabilities ?? {};const high=Number(vuln.high ?? 0);const critical=Number(vuln.critical ?? 0);console.log('high='+high+' critical='+critical);process.exit((high+critical)>0?10:0);}catch{process.exit(20);}"
             parsed_status=$?
             set -e
 
