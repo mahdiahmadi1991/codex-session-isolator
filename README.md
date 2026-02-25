@@ -1,26 +1,38 @@
-# Codex Workspace Launcher
+# Codex Session Isolator
 
-Codex Workspace Launcher isolates Codex state per VS Code workspace.
+[![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
+[![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
+
+Codex Session Isolator gives each code environment its own Codex session state.
 
 When launched through this tool, `CODEX_HOME` is set to:
 
-`<workspace-directory>/.codex`
+`<target-directory>/.codex`
 
-This lets each project keep its own Codex data without changing your global/default behavior.
+`<target-directory>` is:
+
+- the workspace directory (if target is a `.code-workspace` file)
+- the folder itself (if target is a directory)
+- the parent directory (if target is any file)
+
+This isolates Codex state per project without changing global/default behavior.
 
 ## Highlights
 
 - Works with Windows, WSL, Linux, and macOS.
 - Supports Windows paths, Linux paths, and WSL UNC paths.
 - Does not modify shell profiles or global Codex settings.
-- Keeps per-workspace Codex state isolated.
+- Keeps per-project Codex state isolated.
+- Supports both workspace files and plain folders (no workspace required).
 
 ## Project Structure
 
-- `launchers/CodexWorkspaceLauncher.ps1` - Primary smart launcher for Windows.
-- `launchers/OpenAlynBookWSL.bat` - Convenience wrapper around the PowerShell launcher.
-- `launchers/codex-workspace-launcher.sh` - Launcher for Linux/macOS.
-- `docs/USAGE.md` - Usage reference.
+- `launchers/CodexSessionIsolator.ps1` - Primary smart launcher for Windows.
+- `launchers/codex-session-isolator.bat` - Canonical batch launcher for Windows.
+- `launchers/codex-session-isolator.sh` - Canonical launcher for Linux/macOS.
+- `launchers/OpenAlynBookWSL.bat` - Compatibility wrapper.
+- `docs/USAGE.md` - Usage reference (workspace or folder target).
 - `docs/TESTING.md` - Manual test matrix.
 
 ## Quick Start
@@ -28,20 +40,23 @@ This lets each project keep its own Codex data without changing your global/defa
 ### Windows
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexWorkspaceLauncher.ps1 -WorkspacePath "C:\dev\my-app\MyApp.code-workspace"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsolator.ps1 -TargetPath "C:\dev\my-app\MyApp.code-workspace"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsolator.ps1 -TargetPath "C:\dev\my-app"
 ```
 
 Or with wrapper:
 
 ```bat
-.\launchers\OpenAlynBookWSL.bat "C:\dev\my-app\MyApp.code-workspace"
+.\launchers\codex-session-isolator.bat "C:\dev\my-app\MyApp.code-workspace"
+.\launchers\codex-session-isolator.bat "C:\dev\my-app"
 ```
 
 ### Linux/macOS
 
 ```bash
-chmod +x ./launchers/codex-workspace-launcher.sh
-./launchers/codex-workspace-launcher.sh /path/to/my-app/MyApp.code-workspace
+chmod +x ./launchers/codex-session-isolator.sh
+./launchers/codex-session-isolator.sh /path/to/my-app/MyApp.code-workspace
+./launchers/codex-session-isolator.sh /path/to/my-app
 ```
 
 ## Documentation

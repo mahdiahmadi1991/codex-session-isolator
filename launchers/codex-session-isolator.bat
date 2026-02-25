@@ -6,16 +6,11 @@ set "TARGET_PATH=%~1"
 set "OPTIONAL_ARG=%~2"
 
 if "%TARGET_PATH%"=="" (
-  echo Usage: OpenAlynBookWSL.bat ^<workspace-or-folder-path^> [--dry-run]
-  echo Example:
-  echo   OpenAlynBookWSL.bat "/home/user/projects/my-app/MyApp.code-workspace"
-  echo   OpenAlynBookWSL.bat "C:\dev\my-app\MyApp.code-workspace"
-  echo   OpenAlynBookWSL.bat "C:\dev\my-app"
+  echo Usage: codex-session-isolator.bat ^<workspace-or-folder-path^> [--dry-run]
   exit /b 1
 )
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%CodexSessionIsolator.ps1" -TargetPath "%TARGET_PATH%" %OPTIONAL_ARG%
 set "EXIT_CODE=%ERRORLEVEL%"
-
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%

@@ -20,15 +20,18 @@ body:
     attributes:
       label: Launcher used
       options:
-        - launchers/CodexWorkspaceLauncher.ps1
+        - launchers/CodexSessionIsolator.ps1
+        - launchers/codex-session-isolator.bat
+        - launchers/codex-session-isolator.sh
+        - launchers/CodexWorkspaceLauncher.ps1 (compat)
+        - launchers/codex-workspace-launcher.sh (compat)
         - launchers/OpenAlynBookWSL.bat
-        - launchers/codex-workspace-launcher.sh
     validations:
       required: true
   - type: input
-    id: workspace_path
+    id: target_path
     attributes:
-      label: Workspace path passed
+      label: Target path passed
       placeholder: "/home/user/projects/app/App.code-workspace"
     validations:
       required: true
@@ -52,4 +55,3 @@ body:
       render: shell
     validations:
       required: false
-
