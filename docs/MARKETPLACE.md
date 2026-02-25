@@ -77,6 +77,13 @@ Supported triggers:
 - `workflow_dispatch` -> manual publish (`pre-release` or `stable`)
 - `push` to `pre-release` -> auto pre-release publish
 
+Stable policy rules:
+
+- Stable publish version is sourced from `extension/package.json`.
+- Stable git tag MUST match extension version (`v<version>`).
+- Manual stable publish MUST run on `main` and pass `release_tag=v<version>`.
+- Stable extension manifest MUST not be preview (`preview` omitted or `false`).
+
 Workflow outputs:
 
 - VSIX package artifact
@@ -90,9 +97,9 @@ Required repository secret:
 Recommended rollout:
 
 1. Merge feature work into `pre-release` and validate automatic pre-release publishing.
-2. Validate manual fallback with `workflow_dispatch` in `pre-release` mode.
-3. Promote to `main` only for stable-ready commits.
-4. Publish stable via GitHub Release tag matching extension version (`v<version>`).
+2. Promote to `main` only for stable-ready commits.
+3. Create tag `v<version>` from `main` and publish GitHub Release.
+4. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
 
 ## Integrity verification (consumer side)
 
