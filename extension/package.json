@@ -40,7 +40,11 @@
     "onCommand:codexSessionIsolator.initialize",
     "onCommand:codexSessionIsolator.reopenWithLauncher",
     "onCommand:codexSessionIsolator.openLogs",
-    "onCommand:codexSessionIsolator.openConfig"
+    "onCommand:codexSessionIsolator.openConfig",
+    "onCommand:codexProjectIsolator.initialize",
+    "onCommand:codexProjectIsolator.reopenWithLauncher",
+    "onCommand:codexProjectIsolator.openLogs",
+    "onCommand:codexProjectIsolator.openConfig"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -60,8 +64,44 @@
       {
         "command": "codexSessionIsolator.openConfig",
         "title": "Codex Session Isolator: Open Launcher Config"
+      },
+      {
+        "command": "codexProjectIsolator.initialize",
+        "title": "Codex Session Isolator (Legacy): Initialize Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.reopenWithLauncher",
+        "title": "Codex Session Isolator (Legacy): Reopen With Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.openLogs",
+        "title": "Codex Session Isolator (Legacy): Open Launcher Logs"
+      },
+      {
+        "command": "codexProjectIsolator.openConfig",
+        "title": "Codex Session Isolator (Legacy): Open Launcher Config"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "codexProjectIsolator.initialize",
+          "when": "false"
+        },
+        {
+          "command": "codexProjectIsolator.reopenWithLauncher",
+          "when": "false"
+        },
+        {
+          "command": "codexProjectIsolator.openLogs",
+          "when": "false"
+        },
+        {
+          "command": "codexProjectIsolator.openConfig",
+          "when": "false"
+        }
+      ]
+    },
     "configuration": {
       "title": "Codex Session Isolator",
       "properties": {
