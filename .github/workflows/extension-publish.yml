@@ -63,11 +63,15 @@ jobs:
           echo "channel=${channel}" >> "$GITHUB_OUTPUT"
 
       - name: Validate VSCE_PAT
-        if: ${{ secrets.VSCE_PAT == '' }}
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          echo "Missing required repository secret: VSCE_PAT"
-          echo "Create it from a Visual Studio Marketplace Personal Access Token."
-          exit 1
+          if [[ -z "${VSCE_PAT:-}" ]]; then
+            echo "Missing required repository secret: VSCE_PAT"
+            echo "Create it from a Visual Studio Marketplace Personal Access Token."
+            exit 1
+          fi
 
       - name: Validate release tag matches extension version
         if: steps.channel.outputs.channel == 'stable' && github.event_name == 'release'
