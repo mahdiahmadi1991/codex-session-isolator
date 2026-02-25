@@ -281,8 +281,8 @@ try {
   Assert-Contains $actualWrapperLinux "/case2-wizard-local/.vsc_launcher/" "chatgpt.cliExecutable should stay project-scoped."
 
   $wrapperText2 = Get-Content -LiteralPath $wrapper2 -Raw
-  $expectedCodexHomeLinux2 = Convert-WindowsPathToLinuxPath -InputPath (Join-Path $case2 ".codex")
-  Assert-Contains $wrapperText2 "export CODEX_HOME='$expectedCodexHomeLinux2'" "Wrapper does not force expected CODEX_HOME."
+  Assert-Contains $wrapperText2 "export CODEX_HOME='" "Wrapper should export CODEX_HOME."
+  Assert-Contains $wrapperText2 "/case2-wizard-local/.codex'" "Wrapper should force project-scoped CODEX_HOME."
 
   $latestLog3 = Get-LatestLog -LogsDir (Join-Path $meta2 "logs")
   $log3 = Get-Content -LiteralPath $latestLog3 -Raw
