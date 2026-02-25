@@ -75,7 +75,7 @@ Supported triggers:
 
 - `release.published` -> stable publish
 - `workflow_dispatch` -> manual publish (`pre-release` or `stable`)
-- `push` to `main` (only when repository variable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`) -> auto pre-release publish
+- `push` to `pre-release` -> auto pre-release publish
 
 Workflow outputs:
 
@@ -89,10 +89,10 @@ Required repository secret:
 
 Recommended rollout:
 
-1. Keep `MARKETPLACE_AUTO_PUBLISH_MAIN` unset (or `false`) until first stable release is published.
-2. Validate with `workflow_dispatch` in `pre-release` mode.
-3. Publish stable via GitHub Release tag matching extension version (`v<version>`).
-4. Enable `MARKETPLACE_AUTO_PUBLISH_MAIN=true` only if you want automatic pre-release on every `main` change.
+1. Merge feature work into `pre-release` and validate automatic pre-release publishing.
+2. Validate manual fallback with `workflow_dispatch` in `pre-release` mode.
+3. Promote to `main` only for stable-ready commits.
+4. Publish stable via GitHub Release tag matching extension version (`v<version>`).
 
 ## Integrity verification (consumer side)
 

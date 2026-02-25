@@ -5,10 +5,10 @@ Thanks for contributing.
 ## Development flow
 
 1. Fork the repository.
-2. Create a branch from `main`.
+2. Create a branch from `pre-release`.
 3. Make focused changes.
 4. Run manual scenarios in `docs/TESTING.md`.
-5. Open a pull request with:
+5. Open a pull request targeting `pre-release` with:
    - problem statement
    - approach
    - test evidence

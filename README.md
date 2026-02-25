@@ -184,9 +184,12 @@ chmod +x ./launchers/codex-session-isolator.sh
 
 Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
 
+- Branch model:
+  - `pre-release`: integration branch. Every push/merge auto-publishes Marketplace pre-release.
+  - `main`: stable branch. Stable publish happens from GitHub Release (`release.published`).
+- CI/Security workflows run only for `main` and `pre-release` (push + pull request).
 - Stable publish: create a GitHub Release tag that matches extension version (`v<version>`).
-- Manual publish: run the `Extension Publish` workflow via `workflow_dispatch`.
-- Auto pre-release on `main`: set repository variable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`.
+- Manual publish: run the `Extension Publish` workflow via `workflow_dispatch` (`pre-release` or `stable`).
 
 Required repository secret:
 

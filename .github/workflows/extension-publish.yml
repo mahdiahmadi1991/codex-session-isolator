@@ -14,10 +14,7 @@ on:
           - pre-release
           - stable
   push:
-    branches: ["main"]
-    paths:
-      - "extension/**"
-      - ".github/workflows/extension-publish.yml"
+    branches: ["pre-release"]
 
 concurrency:
   group: extension-publish-${{ github.ref }}
@@ -30,7 +27,7 @@ jobs:
     if: |
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && vars.MARKETPLACE_AUTO_PUBLISH_MAIN == 'true')
+      (github.event_name == 'push' && github.ref_name == 'pre-release')
     permissions:
       contents: write
     steps:
