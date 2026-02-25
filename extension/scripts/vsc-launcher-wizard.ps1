@@ -298,10 +298,6 @@ function Convert-ToHashtable {
 function Set-HiddenDotPath {
   param([string]$Path)
 
-  if ($env:OS -ne "Windows_NT") {
-    return
-  }
-
   if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Any)) {
     return
   }
@@ -311,11 +307,36 @@ function Set-HiddenDotPath {
     return
   }
 
-  try {
-    $item = Get-Item -LiteralPath $Path -Force
-    if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
-      $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
+  if ($env:OS -eq "Windows_NT") {
+    try {
+      $item = Get-Item -LiteralPath $Path -Force
+      if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
+        $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
+      }
+    } catch {
+      Write-Info ("Unable to set hidden attribute for path: {0}" -f $Path)
     }
+    return
+  }
+
+  # WSL fallback: allow hidden attribute on Windows-mounted paths when wizard runs in Linux.
+  if ($Path -notmatch '^/mnt/[a-zA-Z]/') {
+    return
+  }
+
+  try {
+    $wslpathCommand = Get-Command wslpath -ErrorAction SilentlyContinue
+    $attribCommand = Get-Command attrib.exe -ErrorAction SilentlyContinue
+    if ($null -eq $wslpathCommand -or $null -eq $attribCommand) {
+      return
+    }
+
+    $windowsPath = (& $wslpathCommand.Source -w $Path 2>$null | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($windowsPath)) {
+      return
+    }
+
+    & $attribCommand.Source +h $windowsPath 2>$null | Out-Null
   } catch {
     Write-Info ("Unable to set hidden attribute for path: {0}" -f $Path)
   }
@@ -831,9 +852,23 @@ function Set-HiddenDotPath {
   }
 
   try {
-    $item = Get-Item -LiteralPath $Path -Force
-    if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
-      $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
+    if ($env:OS -eq "Windows_NT") {
+      $item = Get-Item -LiteralPath $Path -Force
+      if (-not ($item.Attributes -band [IO.FileAttributes]::Hidden)) {
+        $item.Attributes = $item.Attributes -bor [IO.FileAttributes]::Hidden
+      }
+      return
+    }
+
+    if ($Path -match '^/mnt/[a-zA-Z]/') {
+      $wslpathCommand = Get-Command wslpath -ErrorAction SilentlyContinue
+      $attribCommand = Get-Command attrib.exe -ErrorAction SilentlyContinue
+      if ($null -ne $wslpathCommand -and $null -ne $attribCommand) {
+        $windowsPath = (& $wslpathCommand.Source -w $Path 2>$null | Out-String).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($windowsPath)) {
+          & $attribCommand.Source +h $windowsPath 2>$null | Out-Null
+        }
+      }
     }
   } catch {
   }

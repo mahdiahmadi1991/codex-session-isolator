@@ -7,6 +7,8 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.
+- Auto-merge workflow for safe PRs (`.github/workflows/auto-merge-safe-prs.yml`) with branch and file-scope safeguards.
+- Stable release notes template (`docs/RELEASE_TEMPLATE.md`).
 - Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
 - Extension documentation: `docs/EXTENSION.md`.
 - Marketplace preparation guide: `docs/MARKETPLACE.md`.
@@ -22,6 +24,9 @@ All notable changes to this project are documented in this file.
 - README and usage docs now include extension-based workflow.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
+- Safe PR auto-merge guard now disables auto-merge automatically when eligibility is lost, and excludes `.github/workflows/auto-merge-safe-prs.yml` from safe-path allowlist.
+- Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
+- Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexProjectIsolator` and package id to `codex-project-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.

@@ -36,6 +36,18 @@ function Assert-NotContains {
   }
 }
 
+function Assert-HiddenOnWindows {
+  param(
+    [string]$Path,
+    [string]$Message
+  )
+
+  Assert-True (Test-Path -LiteralPath $Path -PathType Any) ($Message + " (path not found: $Path)")
+  $item = Get-Item -LiteralPath $Path -Force
+  $isHidden = [bool]($item.Attributes -band [IO.FileAttributes]::Hidden)
+  Assert-True $isHidden ($Message + " (attributes: " + $item.Attributes + ")")
+}
+
 function Convert-WindowsPathToLinuxPath {
   param([string]$InputPath)
 
@@ -134,6 +146,39 @@ function Invoke-Wizard {
   }
 }
 
+function Invoke-WizardScriptDirect {
+  param(
+    [string]$RepoRoot,
+    [string]$ScriptPath,
+    [string]$TargetPath,
+    [string[]]$Responses,
+    [switch]$DebugMode
+  )
+
+  $inputFile = Join-Path $env:TEMP ("csi-wizard-input-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  try {
+    $payload = if ($Responses.Count -gt 0) { ($Responses -join "`r`n") + "`r`n" } else { "" }
+    Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
+
+    $debugArg = if ($DebugMode) { " -DebugMode" } else { "" }
+    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File ""$ScriptPath"" -TargetPath ""$TargetPath""" + $debugArg + " < ""$inputFile"""
+
+    Push-Location $RepoRoot
+    try {
+      cmd /c $cmd | Out-Host
+      if ($LASTEXITCODE -ne 0) {
+        throw "Wizard script failed with exit code $LASTEXITCODE for target $TargetPath"
+      }
+    } finally {
+      Pop-Location
+    }
+  } finally {
+    if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
+      Remove-Item -LiteralPath $inputFile -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Invoke-RunnerDryRun {
   param([string]$RunnerPath)
 
@@ -191,6 +236,20 @@ try {
     Pop-Location
   }
 
+  Write-Host "[test] Case 0.1: bundled wizard parity and hidden-dot paths"
+  $toolWizardPath = Join-Path $repoRoot "tools\vsc-launcher-wizard.ps1"
+  $bundledWizardPath = Join-Path $repoRoot "extension\scripts\vsc-launcher-wizard.ps1"
+  $toolHash = (Get-FileHash -LiteralPath $toolWizardPath -Algorithm SHA256).Hash
+  $bundledHash = (Get-FileHash -LiteralPath $bundledWizardPath -Algorithm SHA256).Hash
+  Assert-True ($toolHash -eq $bundledHash) "Bundled wizard script is out of sync with tools wizard."
+
+  $case01 = Join-Path $tmpRoot "case01-bundled-wizard"
+  New-Item -ItemType Directory -Force -Path $case01 | Out-Null
+  Set-Content -LiteralPath (Join-Path $case01 "bundled.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
+  Invoke-WizardScriptDirect -RepoRoot $repoRoot -ScriptPath $bundledWizardPath -TargetPath $case01 -Responses @("y")
+  Assert-HiddenOnWindows -Path (Join-Path $case01 ".vsc_launcher") -Message "Expected .vsc_launcher to be hidden on Windows."
+  Assert-HiddenOnWindows -Path (Join-Path $case01 ".vscode") -Message "Expected .vscode to be hidden on Windows."
+
   Write-Host "[test] Case 1: canonical launcher dry-run (folder + workspace)"
   $case1 = Join-Path $tmpRoot "case1-canonical"
   New-Item -ItemType Directory -Force -Path $case1 | Out-Null
@@ -225,6 +284,8 @@ try {
   Assert-True (Test-Path -LiteralPath $launcher2 -PathType Leaf) "Generated launcher not found."
   Assert-True (Test-Path -LiteralPath $runner2 -PathType Leaf) "Generated runner not found."
   Assert-True (Test-Path -LiteralPath $config2 -PathType Leaf) "Generated config not found."
+  Assert-HiddenOnWindows -Path $meta2 -Message "Expected metadata directory to be hidden on Windows."
+  Assert-HiddenOnWindows -Path (Join-Path $case2 ".vscode") -Message "Expected .vscode directory to be hidden on Windows."
   Assert-True (Test-Path -LiteralPath $defaults2 -PathType Leaf) "Wizard defaults file not found."
   Assert-True (Test-Path -LiteralPath $vscodeSettings2 -PathType Leaf) ".vscode/settings.json not found."
   Assert-True (Test-Path -LiteralPath $gitignore2 -PathType Leaf) ".gitignore not found."
