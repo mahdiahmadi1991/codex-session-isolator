@@ -248,7 +248,8 @@ try {
 
   $dryRun2 = Invoke-RunnerDryRun -RunnerPath $runner2
   Assert-True ($dryRun2.ExitCode -eq 0) "Runner dry-run failed in baseline case."
-  Assert-Contains $dryRun2.Output "[dry-run] VSCode user-data-dir: $meta2\vscode-user-data" "Expected local user-data-dir in dry-run output."
+  Assert-Contains $dryRun2.Output "[dry-run] VSCode user-data-dir:" "Expected local user-data-dir label in dry-run output."
+  Assert-Contains $dryRun2.Output ".vsc_launcher\vscode-user-data" "Expected local user-data-dir path segment in dry-run output."
 
   $run2 = Invoke-RunnerWithMockCode -RunnerPath $runner2
   Assert-True ($run2.ExitCode -eq 0) ("Runner execution failed in baseline case. Output: " + $run2.Output)

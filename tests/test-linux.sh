@@ -33,6 +33,7 @@ assert_exit_code() {
 echo "[test] Bash syntax check"
 bash -n "$LAUNCHER"
 bash -n "$WIZARD_HELPER"
+chmod +x "$WIZARD_HELPER"
 
 echo "[test] Wizard helper usage output"
 if command -v pwsh >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
@@ -81,4 +82,3 @@ assert_contains "$arg_output" "Unknown second argument:" "Invalid argument messa
 rm -f /tmp/csi-linux-arg.out
 
 echo "[test] All Linux tests passed."
-

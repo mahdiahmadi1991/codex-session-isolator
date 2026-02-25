@@ -228,13 +228,13 @@ function Get-RelativePathSafe {
     [string]$TargetPath
   )
 
-  $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
-  if ($null -ne $method) {
-    return [IO.Path]::GetRelativePath($BasePath, $TargetPath)
-  }
-
   $baseResolved = (Resolve-Path -LiteralPath $BasePath).Path
   $targetResolved = (Resolve-Path -LiteralPath $TargetPath).Path
+
+  $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
+  if ($null -ne $method) {
+    return [IO.Path]::GetRelativePath($baseResolved, $targetResolved)
+  }
 
   $separator = [IO.Path]::DirectorySeparatorChar
   $baseWithSlash = $baseResolved.TrimEnd('\', '/') + $separator

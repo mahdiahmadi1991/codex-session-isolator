@@ -10,6 +10,8 @@ All notable changes to this project are documented in this file.
 - Manual testing guide was corrected to match canonical launcher behavior and conditional WSL prompts.
 - README now clarifies direct wizard PowerShell requirement.
 - Added a project banner image to README for clearer project branding.
+- Wizard path normalization now resolves canonical paths before computing relative workspace paths, avoiding short/long Windows path mismatches.
+- Unix integration tests now enforce execute permission on `tools/vsc-launcher.sh` in CI before running helper checks.
 
 ## [0.3.1] - 2026-02-25
 
