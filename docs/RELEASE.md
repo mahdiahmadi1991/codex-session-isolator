@@ -27,6 +27,7 @@ Security checks:
 
 - Confirm `README.md`, `docs/USAGE.md`, and `docs/TESTING.md` match current launcher behavior.
 - Confirm `CHANGELOG.md` contains release notes for the version to publish.
+- Prepare release notes from `docs/RELEASE_TEMPLATE.md`.
 
 ## 2.1) Extension marketplace checks
 

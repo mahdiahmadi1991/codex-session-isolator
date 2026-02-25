@@ -166,6 +166,7 @@ chmod +x ./launchers/codex-session-isolator.sh
 - Trust model: `docs/TRUST.md`
 - Test scenarios: `docs/TESTING.md`
 - Release steps: `docs/RELEASE.md`
+- Release notes template: `docs/RELEASE_TEMPLATE.md`
 - Contribution guide: `CONTRIBUTING.md`
 - Privacy notice: `PRIVACY.md`
 - Security policy: `SECURITY.md`

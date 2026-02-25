@@ -1,0 +1,114 @@
+name: Auto Merge Safe PRs
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge for safe PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate and enable auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info("No pull request payload.");
+              return;
+            }
+
+            if (pr.draft) {
+              core.info("Draft PR; skipping.");
+              return;
+            }
+
+            const baseRef = pr.base.ref;
+            if (!["pre-release", "main"].includes(baseRef)) {
+              core.info(`Base branch '${baseRef}' is not eligible.`);
+              return;
+            }
+
+            const labels = (pr.labels || []).map((l) => l.name);
+            const hasSafeLabel = labels.includes("automerge:safe");
+            const isDependabot = pr.user?.login === "dependabot[bot]";
+
+            if (!hasSafeLabel && !isDependabot) {
+              core.info("PR is neither dependabot nor labeled automerge:safe.");
+              return;
+            }
+
+            const safePrefixes = [
+              "docs/",
+              ".github/workflows/"
+            ];
+            const safeFiles = new Set([
+              "README.md",
+              "CHANGELOG.md",
+              "CONTRIBUTING.md",
+              "SECURITY.md",
+              "PRIVACY.md",
+              ".github/dependabot.yml"
+            ]);
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+
+            if (files.length === 0) {
+              core.info("No changed files; skipping.");
+              return;
+            }
+
+            const unsafeFiles = files
+              .map((f) => f.filename)
+              .filter((filename) => {
+                if (safeFiles.has(filename)) {
+                  return false;
+                }
+                return !safePrefixes.some((prefix) => filename.startsWith(prefix));
+              });
+
+            if (unsafeFiles.length > 0) {
+              core.notice(
+                `Auto-merge skipped because unsafe paths were changed: ${unsafeFiles.join(", ")}`
+              );
+              return;
+            }
+
+            try {
+              await github.graphql(
+                `
+                mutation EnableAutoMerge($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(
+                    input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }
+                  ) {
+                    pullRequest {
+                      number
+                    }
+                  }
+                }
+                `,
+                { pullRequestId: pr.node_id }
+              );
+              core.info(`Auto-merge enabled for PR #${pr.number}.`);
+            } catch (error) {
+              const message = String(error?.message || error);
+              if (
+                message.includes("already enabled") ||
+                message.includes("Pull request Auto merge is already enabled")
+              ) {
+                core.info(`Auto-merge was already enabled for PR #${pr.number}.`);
+                return;
+              }
+              throw error;
+            }
+
