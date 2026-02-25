@@ -5,6 +5,7 @@ Thumbs.db
 # >>> codex-session-isolator >>>
 # Managed by Codex Session Isolator launcher wizard.
 vsc_launcher.bat
+vsc_launcher.sh
 .vsc_launcher/
 .codex/
 # <<< codex-session-isolator <<<

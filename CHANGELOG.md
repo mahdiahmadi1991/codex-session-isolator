@@ -30,6 +30,7 @@ All notable changes to this project are documented in this file.
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Safe PR auto-merge guard now disables auto-merge automatically when eligibility is lost, and excludes `.github/workflows/auto-merge-safe-prs.yml` from safe-path allowlist.
 - Main promotion policy now re-evaluates on PR label changes and validates `pre-release` source from the same repository (not forks).
+- Managed `.gitignore` launcher block now ignores both `vsc_launcher.bat` and `vsc_launcher.sh` for cross-platform generated launcher artifacts.
 - Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
 - Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
 - Extension metadata and README content were enriched for Marketplace readiness.
