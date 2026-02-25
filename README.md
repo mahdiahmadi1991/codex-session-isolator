@@ -1,5 +1,7 @@
 # Codex Session Isolator
 
+![Codex Session Isolator banner](docs/assets/codex-session-isolator-banner.svg)
+
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
 [![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
@@ -32,33 +34,76 @@ This isolates Codex state per project without changing global/default behavior.
 - `launchers/CodexSessionIsolator.ps1` - Primary smart launcher for Windows.
 - `launchers/codex-session-isolator.bat` - Canonical batch launcher for Windows.
 - `launchers/codex-session-isolator.sh` - Canonical launcher for Linux/macOS.
-- `launchers/OpenAlynBookWSL.bat` - Compatibility wrapper.
+- `tools/vsc-launcher.ps1` - Cross-platform wizard helper core.
+- `tools/vsc-launcher.bat` - Wizard helper entrypoint for Windows.
+- `tools/vsc-launcher.sh` - Wizard helper entrypoint for Linux/macOS.
+- `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
+- `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
 - `docs/TESTING.md` - Manual test matrix.
 
 ## Quick Start
 
-### Generate a launcher (wizard)
+### Wizard helper (recommended)
 
-Windows:
+Windows (CMD):
 
 ```bat
-.\tools\new-vsc-launcher.bat "C:\path\to\project"
+.\tools\vsc-launcher.bat "C:\path\to\project"
+.\tools\vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
-PowerShell:
+Windows (PowerShell):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+.\tools\vsc-launcher.ps1 "C:\path\to\project"
+.\tools\vsc-launcher.ps1 "C:\path\to\project" --debug
 ```
+
+Linux/macOS:
+
+```bash
+chmod +x ./tools/vsc-launcher.sh
+./tools/vsc-launcher.sh "/path/to/project"
+./tools/vsc-launcher.sh "/path/to/project" --debug
+```
+
+Helper options:
+
+- `--help` show usage
+- `--debug` generate launcher with logging enabled by default
+- `--target <path>` pass target explicitly
+
+Direct wizard (advanced):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.ps1 -TargetPath "C:\path\to\project"
+```
+
+Note: direct wizard execution requires PowerShell (`powershell` or `pwsh`).
 
 The wizard asks for:
 
-- folder vs workspace launch target
-- Remote WSL mode and distro selection (when needed)
+- Remote WSL mode
 - whether Codex should run in WSL for this project
-- whether `.codex/sessions` and `.codex/archived_sessions` should be git-ignored
-- optional logging default for the generated launcher
+- whether Codex chat sessions should be git-ignored
+
+Wizard defaults:
+
+- If exactly one workspace file exists in target path, it is selected automatically.
+- If no workspace file exists, folder target is used.
+- It asks workspace selection only when more than one workspace file is found.
+- If WSL is not installed/available, WSL-related questions are skipped automatically.
+- Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
+- Logging is disabled by default and enabled only when running wizard with `--debug`.
+- On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
+- Wizard always writes:
+  - `chatgpt.openOnStartup=true`
+  - `chatgpt.runCodexInWindowsSubsystemForLinux=<selected>`
+  in `.vscode/settings.json`, and also in `.code-workspace` settings when launch target is a workspace file.
+- In local Windows mode, generated launcher runs VS Code with a project-scoped `--user-data-dir` under `.vsc_launcher/` to ensure `CODEX_HOME` is applied reliably.
+- In Remote WSL mode, launcher skips isolated `--user-data-dir` because WSL `code` CLI does not support that option.
+- When `chatgpt.runCodexInWindowsSubsystemForLinux=true` and launch mode is local Windows, launcher configures an isolated `chatgpt.cliExecutable` wrapper in the project profile to force project `CODEX_HOME` for Codex app-server.
 
 ### Windows
 
@@ -86,9 +131,11 @@ chmod +x ./launchers/codex-session-isolator.sh
 
 - Usage: `docs/USAGE.md`
 - Test scenarios: `docs/TESTING.md`
+- Release steps: `docs/RELEASE.md`
 - Contribution guide: `CONTRIBUTING.md`
 - Security policy: `SECURITY.md`
 
 ## License
 
 MIT
+

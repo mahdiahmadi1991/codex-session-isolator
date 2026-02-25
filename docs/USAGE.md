@@ -20,26 +20,58 @@ Use the wizard to generate a project-specific launcher in your target folder.
 Windows (batch entrypoint):
 
 ```bat
-.\tools\new-vsc-launcher.bat "C:\path\to\project"
+.\tools\vsc-launcher.bat "C:\path\to\project"
+.\tools\vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
-PowerShell direct:
+Windows (PowerShell helper):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+.\tools\vsc-launcher.ps1 "C:\path\to\project"
+.\tools\vsc-launcher.ps1 "C:\path\to\project" --debug
+```
+
+Linux/macOS (helper):
+
+```bash
+chmod +x ./tools/vsc-launcher.sh
+./tools/vsc-launcher.sh "/path/to/project"
+./tools/vsc-launcher.sh "/path/to/project" --debug
+```
+
+Direct wizard:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.ps1 -TargetPath "C:\path\to\project"
 ```
 
 Wizard outputs (Windows):
 
-- `<target>\vsc_launcher.ps1`
-- `<target>\vsc_launcher.bat`
-- `<target>\vsc_launcher.config.json`
+- `<target>\vsc_launcher.bat` (only executable launcher in target root)
+- `<target>\.vsc_launcher\config.json`
+- `<target>\.vsc_launcher\wizard.defaults.json`
+- `<target>\.vsc_launcher\runner.ps1`
+- `<target>\.vsc_launcher\codex-wsl-wrapper.sh` (generated only for local Windows + Codex-in-WSL mode)
+- `<target>\.vsc_launcher\vscode-user-data\` (VS Code isolated process profile, local Windows mode only)
+- `<target>\.vsc_launcher\logs\` (wizard logs always, launcher logs in debug/`-Log`)
 
 Wizard behavior:
 
 - Replaces generated launcher files if they already exist.
 - Updates a managed `.gitignore` block in target folder.
-- Updates `.vscode/settings.json` for `chatgpt.runCodexInWindowsSubsystemForLinux`.
+- Always updates `.vscode/settings.json` with:
+  - `chatgpt.runCodexInWindowsSubsystemForLinux`
+  - `chatgpt.openOnStartup=true`
+- If launch target is a `.code-workspace` file, it also updates the workspace `settings` block with the same values.
+- Auto-selects workspace when exactly one workspace file exists.
+- Asks workspace selection only when more than one workspace file exists.
+- Uses folder target automatically when no workspace file exists.
+- Skips WSL-related questions automatically when WSL is unavailable.
+- Remembers previous answers and uses them as defaults for faster wizard runs.
+- Enables launcher logging only in wizard debug mode (`--debug`).
+- In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
+- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it.
+- For local Windows + Codex-in-WSL mode, automatically sets profile-scoped `chatgpt.cliExecutable` to a generated WSL wrapper so Codex app-server receives project `CODEX_HOME`.
 
 ## Windows
 
@@ -84,3 +116,5 @@ chmod +x ./launchers/codex-session-isolator.sh
 - The launcher creates `.codex` inside the target directory if missing.
 - The launcher does not create symlinks to `~/.codex`.
 - For WSL mode, `code` must be available in WSL PATH.
+
+

@@ -1,0 +1,88 @@
+<svg width="1600" height="420" viewBox="0 0 1600 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Codex Session Isolator Banner</title>
+  <desc id="desc">Per-project Codex session isolation for VS Code targets across Windows, WSL, Linux, and macOS.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#081326"/>
+      <stop offset="0.55" stop-color="#0B2A3D"/>
+      <stop offset="1" stop-color="#0A3A49"/>
+    </linearGradient>
+    <radialGradient id="leftGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 210) rotate(90) scale(210 320)">
+      <stop stop-color="#1A6B8F" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#1A6B8F" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rightGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1330 210) rotate(90) scale(170 260)">
+      <stop stop-color="#1EA6A0" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#1EA6A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="60" y1="54" x2="520" y2="354" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E2034"/>
+      <stop offset="1" stop-color="#0A1628"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="420" fill="url(#bg)"/>
+  <rect width="1600" height="420" fill="url(#leftGlow)"/>
+  <rect width="1600" height="420" fill="url(#rightGlow)"/>
+
+  <g opacity="0.1" stroke="#93C5FD">
+    <path d="M0 70H1600"/>
+    <path d="M0 140H1600"/>
+    <path d="M0 210H1600"/>
+    <path d="M0 280H1600"/>
+    <path d="M0 350H1600"/>
+    <path d="M170 0V420"/>
+    <path d="M340 0V420"/>
+    <path d="M510 0V420"/>
+    <path d="M680 0V420"/>
+    <path d="M850 0V420"/>
+    <path d="M1020 0V420"/>
+    <path d="M1190 0V420"/>
+    <path d="M1360 0V420"/>
+    <path d="M1530 0V420"/>
+  </g>
+
+  <rect x="58" y="54" width="470" height="300" rx="26" fill="url(#panel)" stroke="#24405B"/>
+
+  <circle cx="160" cy="210" r="22" fill="#38BDF8"/>
+  <circle cx="275" cy="116" r="18" fill="#60A5FA"/>
+  <circle cx="275" cy="304" r="18" fill="#60A5FA"/>
+  <circle cx="420" cy="210" r="22" fill="#6EE7B7"/>
+  <path d="M182 195L253 133" stroke="#7DD3FC" stroke-width="4"/>
+  <path d="M182 225L253 287" stroke="#7DD3FC" stroke-width="4"/>
+  <path d="M294 116H381" stroke="#7DD3FC" stroke-width="4"/>
+  <path d="M294 304H381" stroke="#7DD3FC" stroke-width="4"/>
+
+  <rect x="226" y="172" width="100" height="76" rx="10" fill="#0C2534" stroke="#2A5C73"/>
+  <path d="M238 194H312" stroke="#4FD1C5" stroke-width="3"/>
+  <path d="M238 212H304" stroke="#4FD1C5" stroke-width="3" opacity="0.8"/>
+  <path d="M238 230H292" stroke="#4FD1C5" stroke-width="3" opacity="0.65"/>
+
+  <text x="570" y="158" fill="#F8FAFC" font-size="72" font-family="'Segoe UI', Tahoma, Arial, sans-serif" font-weight="700">
+    Codex Session Isolator
+  </text>
+  <text x="570" y="218" fill="#BFDBFE" font-size="33" font-family="'Segoe UI', Tahoma, Arial, sans-serif" font-weight="500">
+    Per-project Codex sessions for VS Code workspaces and folders
+  </text>
+
+  <g fill="#D1FAE5" font-family="'Segoe UI', Tahoma, Arial, sans-serif" font-size="22" font-weight="600" text-anchor="middle">
+    <rect x="570" y="260" width="144" height="44" rx="22" fill="#0B3240" stroke="#2F6F7E"/>
+    <text x="642" y="289">Windows</text>
+    <rect x="728" y="260" width="94" height="44" rx="22" fill="#0B3240" stroke="#2F6F7E"/>
+    <text x="775" y="289">WSL</text>
+    <rect x="836" y="260" width="102" height="44" rx="22" fill="#0B3240" stroke="#2F6F7E"/>
+    <text x="887" y="289">Linux</text>
+    <rect x="952" y="260" width="118" height="44" rx="22" fill="#0B3240" stroke="#2F6F7E"/>
+    <text x="1011" y="289">macOS</text>
+  </g>
+
+  <g opacity="0.85">
+    <circle cx="1366" cy="136" r="46" stroke="#7DD3FC" stroke-width="3"/>
+    <circle cx="1366" cy="136" r="26" fill="#12324A" stroke="#38BDF8" stroke-width="2"/>
+    <path d="M1366 119L1378 128V143C1378 151 1373 158 1366 161C1359 158 1354 151 1354 143V128L1366 119Z" fill="#6EE7B7"/>
+    <path d="M1245 262H1488" stroke="#4FD1C5" stroke-opacity="0.4"/>
+    <path d="M1245 286H1438" stroke="#4FD1C5" stroke-opacity="0.28"/>
+    <path d="M1245 310H1392" stroke="#4FD1C5" stroke-opacity="0.2"/>
+  </g>
+</svg>
