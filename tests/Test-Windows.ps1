@@ -106,7 +106,8 @@ function Invoke-Wizard {
     [string]$RepoRoot,
     [string]$TargetPath,
     [string[]]$Responses,
-    [switch]$DebugMode
+    [switch]$DebugMode,
+    [switch]$UseTargetFlag
   )
 
   $inputFile = Join-Path $env:TEMP ("csi-wizard-input-" + [Guid]::NewGuid().ToString("N") + ".txt")
@@ -115,7 +116,8 @@ function Invoke-Wizard {
     Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
 
     $debugArg = if ($DebugMode) { " --debug" } else { "" }
-    $cmd = "tools\vsc-launcher.bat ""$TargetPath""" + $debugArg + " < ""$inputFile"""
+    $targetArg = if ($UseTargetFlag) { "--target ""$TargetPath""" } else { """$TargetPath""" }
+    $cmd = "tools\vsc-launcher.bat $targetArg" + $debugArg + " < ""$inputFile"""
     Push-Location $RepoRoot
     try {
       cmd /c $cmd | Out-Host
@@ -181,6 +183,10 @@ try {
     $helpPs = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\vsc-launcher.ps1") -Arguments @("--help")
     Assert-True ($helpPs.ExitCode -eq 0) "PowerShell helper help command failed."
     Assert-Contains $helpPs.Output "Usage:" "PowerShell helper help output mismatch."
+
+    $missingTarget = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\vsc-launcher.ps1") -Arguments @("--target")
+    Assert-True ($missingTarget.ExitCode -ne 0) "PowerShell helper should fail when --target has no value."
+    Assert-Contains $missingTarget.Output "Missing value for --target." "PowerShell helper missing-target error mismatch."
   } finally {
     Pop-Location
   }
@@ -206,7 +212,7 @@ try {
   $ws2 = Join-Path $case2 "app.code-workspace"
   Set-Content -LiteralPath $ws2 -Value '{"folders":[{"path":"."}]}' -NoNewline
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
 
   $launcher2 = Join-Path $case2 "vsc_launcher.bat"
   $meta2 = Join-Path $case2 ".vsc_launcher"

@@ -78,6 +78,8 @@ Direct wizard (advanced):
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.ps1 -TargetPath "C:\path\to\project"
 ```
 
+Note: direct wizard execution requires PowerShell (`powershell` or `pwsh`).
+
 The wizard asks for:
 
 - Remote WSL mode

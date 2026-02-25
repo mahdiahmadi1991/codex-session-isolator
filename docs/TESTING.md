@@ -21,7 +21,8 @@ Expected:
 - If target has one workspace file, no workspace prompt is shown and workspace is selected automatically.
 - If target has no workspace file, folder target is selected automatically.
 - If target has multiple workspace files, wizard asks to select one.
-- Wizard prompts for WSL options, Codex WSL setting, and session ignore.
+- If WSL is available, wizard prompts for WSL options and Codex WSL setting.
+- Wizard always prompts for session ignore policy.
 - It creates/replaces one launcher file in target directory plus `.vsc_launcher` metadata.
 - It updates managed `.gitignore` block.
 - It writes `.vscode/settings.json` with:
@@ -52,8 +53,6 @@ Expected:
 
 - VS Code opens the workspace locally (Windows).
 - `C:\path\to\repo\.codex` exists.
-- `C:\path\to\repo\.vsc_launcher\vscode-user-data` exists.
-- `C:\path\to\repo\.vsc_launcher\vscode-user-data\User\settings.json` contains `chatgpt.cliExecutable` pointing to the generated WSL wrapper.
 
 ## 2) Windows local folder path (no workspace file)
 

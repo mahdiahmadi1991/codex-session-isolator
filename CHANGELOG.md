@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Windows test suite now validates `--target` argument error handling and generated-wizard flow through `--target` for better helper coverage.
+- Manual testing guide was corrected to match canonical launcher behavior and conditional WSL prompts.
+- README now clarifies direct wizard PowerShell requirement.
+
 ## [0.3.1] - 2026-02-25
 
 ### Changed
