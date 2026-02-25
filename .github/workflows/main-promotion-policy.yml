@@ -1,0 +1,47 @@
+name: Main Promotion Policy
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+jobs:
+  source-branch-policy:
+    name: Main Promotion Policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce source branch policy for main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed("Missing pull request payload.");
+              return;
+            }
+
+            const baseRef = pr.base.ref;
+            const headRef = pr.head.ref;
+            const headRepoFullName = pr.head.repo?.full_name || "";
+            const currentRepoFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const labels = (pr.labels || []).map((label) => label.name);
+            const allowHotfix = labels.includes("allow-main-hotfix");
+
+            if (headRef === "pre-release" && headRepoFullName === currentRepoFullName) {
+              core.info("Policy passed: main promotion PR source is pre-release.");
+              return;
+            }
+
+            if (allowHotfix) {
+              core.notice(
+                "Hotfix override accepted via 'allow-main-hotfix' label. " +
+                "After merge, create a sync PR from main to pre-release."
+              );
+              return;
+            }
+
+            core.setFailed(
+              "PRs targeting 'main' must come from 'pre-release'. " +
+              `Current source branch: '${headRef}'. ` +
+              "For emergency fixes, add label 'allow-main-hotfix' and sync main back to pre-release after merge."
+            );

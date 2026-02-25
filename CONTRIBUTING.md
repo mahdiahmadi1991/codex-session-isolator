@@ -12,6 +12,17 @@ Thanks for contributing.
    - problem statement
    - approach
    - test evidence
+6. Promote to `main` only via a pull request from `pre-release`.
+
+## Branch policy
+
+- `pre-release` is the integration branch for all feature/fix work.
+- `main` accepts promotion PRs from `pre-release` only.
+- Emergency exception:
+  - create hotfix branch from `main` (for example: `hotfix/<issue-id>`)
+  - open PR to `main` from that hotfix branch
+  - add label `allow-main-hotfix`
+  - after merge, open sync PR `main` -> `pre-release`
 
 ## Guidelines
 

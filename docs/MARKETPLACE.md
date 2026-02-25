@@ -92,6 +92,8 @@ Recommended rollout:
 1. Merge feature work into `pre-release` and validate automatic pre-release publishing.
 2. Validate manual fallback with `workflow_dispatch` in `pre-release` mode.
 3. Promote to `main` only for stable-ready commits.
+   - enforced policy: only PRs from `pre-release` are accepted to `main`
+   - emergency exception: label `allow-main-hotfix` and then sync `main` back to `pre-release`
 4. Publish stable via GitHub Release tag matching extension version (`v<version>`).
 
 ## Integrity verification (consumer side)

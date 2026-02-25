@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.
 - Auto-merge workflow for safe PRs (`.github/workflows/auto-merge-safe-prs.yml`) with branch and file-scope safeguards.
+- Main promotion policy workflow (`.github/workflows/main-promotion-policy.yml`) to require `pre-release` as the source branch for PRs into `main` (with explicit hotfix override label).
 - Stable release notes template (`docs/RELEASE_TEMPLATE.md`).
 - Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
 - Extension documentation: `docs/EXTENSION.md`.
@@ -25,6 +26,7 @@ All notable changes to this project are documented in this file.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Safe PR auto-merge guard now disables auto-merge automatically when eligibility is lost, and excludes `.github/workflows/auto-merge-safe-prs.yml` from safe-path allowlist.
+- Main promotion policy now re-evaluates on PR label changes and validates `pre-release` source from the same repository (not forks).
 - Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
 - Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
 - Extension metadata and README content were enriched for Marketplace readiness.
