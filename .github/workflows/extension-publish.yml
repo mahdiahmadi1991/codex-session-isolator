@@ -105,9 +105,14 @@ jobs:
 
       - name: Package extension
         working-directory: extension
+        shell: bash
         run: |
           rm -f ./*.vsix ./*.vsix.sha256
-          npm run package
+          if [[ "${{ steps.channel.outputs.channel }}" == "pre-release" ]]; then
+            npx @vscode/vsce package --pre-release --no-dependencies
+          else
+            npx @vscode/vsce package --no-dependencies
+          fi
 
       - name: Generate checksum
         id: package
