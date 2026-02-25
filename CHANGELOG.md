@@ -25,7 +25,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Interactive launcher wizard:
-  - `tools/New-VscLauncherWizard.ps1`
+  - `tools/vsc-launcher-wizard.ps1`
   - `tools/vsc-launcher.bat`
 - Wizard-driven generation of project-specific launchers from a target path.
 - Optional launcher logging support in generated launcher.
@@ -87,4 +87,5 @@ All notable changes to this project are documented in this file.
   - `launchers/codex-workspace-launcher.sh`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.
+
 

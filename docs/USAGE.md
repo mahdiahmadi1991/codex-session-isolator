@@ -42,7 +42,7 @@ chmod +x ./tools/vsc-launcher.sh
 Direct wizard:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.ps1 -TargetPath "C:\path\to\project"
 ```
 
 Wizard outputs (Windows):
@@ -116,4 +116,5 @@ chmod +x ./launchers/codex-session-isolator.sh
 - The launcher creates `.codex` inside the target directory if missing.
 - The launcher does not create symlinks to `~/.codex`.
 - For WSL mode, `code` must be available in WSL PATH.
+
 

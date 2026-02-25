@@ -51,7 +51,7 @@ if ($env:CSI_WIZARD_DEBUG -eq "1") {
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$wizardPath = Join-Path $scriptDir "New-VscLauncherWizard.ps1"
+$wizardPath = Join-Path $scriptDir "vsc-launcher-wizard.ps1"
 if (-not (Test-Path -LiteralPath $wizardPath -PathType Leaf)) {
   throw "Wizard script not found: $wizardPath"
 }
@@ -76,4 +76,5 @@ if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
   }
 }
 exit $LASTEXITCODE
+
 

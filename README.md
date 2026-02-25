@@ -75,7 +75,7 @@ Helper options:
 Direct wizard (advanced):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.ps1 -TargetPath "C:\path\to\project"
 ```
 
 The wizard asks for:
@@ -134,4 +134,5 @@ chmod +x ./launchers/codex-session-isolator.sh
 ## License
 
 MIT
+
 
