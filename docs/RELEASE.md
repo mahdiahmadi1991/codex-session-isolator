@@ -33,7 +33,9 @@ Security checks:
 - Confirm `extension/package.json` version is set for target stable release.
 - Confirm extension id is `2ma.codex-project-isolator`.
 - Confirm repository secret `VSCE_PAT` is configured.
-- Optional auto pre-release toggle: repository variable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`.
+- Confirm branch model is followed:
+  - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.
+  - `main` receives only stable-ready merges.
 
 ## 3) Commit and tag
 
@@ -43,7 +45,7 @@ git commit -m "chore: prepare release vX.Y.Z"
 git tag vX.Y.Z
 ```
 
-## 4) Push
+## 4) Push stable branch
 
 ```powershell
 git push origin main
@@ -57,7 +59,7 @@ git push origin vX.Y.Z
 
 ## 6) Marketplace publish paths
 
+- Pre-release: automatic on every push/merge to `pre-release`.
 - Stable: publishing is automatic on `release.published` via `.github/workflows/extension-publish.yml`.
 - Manual: run workflow `Extension Publish` (`workflow_dispatch`) and choose `stable` or `pre-release`.
-- Continuous pre-release on `main`: enable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`.
 - Workflow also produces VSIX checksum (`*.vsix.sha256`); publish these files with stable release assets.

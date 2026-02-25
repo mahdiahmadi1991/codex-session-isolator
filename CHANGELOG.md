@@ -20,6 +20,8 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - README and usage docs now include extension-based workflow.
+- CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
+- Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexProjectIsolator` and package id to `codex-project-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
