@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.
+- Extension commands to initialize launcher, reopen with launcher, and open launcher logs/config.
+- Extension documentation: `docs/EXTENSION.md`.
+- Marketplace preparation guide: `docs/MARKETPLACE.md`.
+- Extension Marketplace assets: `extension/media/icon.png` and `extension/media/hero.png`.
+- Marketplace publish automation workflow: `.github/workflows/extension-publish.yml` (release/manual plus optional auto pre-release on `main`).
+- Extension build/package flow now auto-syncs bundled wizard from `tools/vsc-launcher-wizard.ps1` via `extension/scripts/sync-wizard.mjs`.
+- Privacy notice: `PRIVACY.md`.
+- Trust and safety model guide: `docs/TRUST.md`.
+- Dedicated security workflow: `.github/workflows/security.yml` (dependency review, secret scan, PowerShell syntax validation, npm audit, CodeQL).
+
+### Changed
+
+- README and usage docs now include extension-based workflow.
+- Extension metadata and README content were enriched for Marketplace readiness.
+- Extension identifier namespace was refined to `codexProjectIsolator` and package id to `codex-project-isolator`.
+- Extension publisher id for Marketplace packaging was updated to `2ma`.
+- Marketplace hero image was regenerated at larger dimensions to prevent text clipping.
+- Wizard now creates safety backups before overwriting managed files under `.vsc_launcher/backups/<timestamp-pid>/`.
+- Extension now enforces trusted workspace and asks explicit confirmation before launcher initialization (default enabled).
+- Marketplace publish workflow now packages VSIX once, publishes from `--packagePath`, and produces SHA-256 checksum artifacts (attached on stable releases).
+- Windows integration tests now validate backup creation for wizard overwrites.
+- Documentation now explicitly clarifies project-isolated chat visibility and per-project account/API-key context.
+
 ## [0.3.2] - 2026-02-25
 
 ### Changed
@@ -54,7 +82,7 @@ All notable changes to this project are documented in this file.
   - logging prompt removed; logging enabled only in wizard debug mode
 - Generated output simplified:
   - one executable launcher file in target root (`vsc_launcher.bat` on Windows)
-  - launcher metadata/config moved under hidden `.vsc_launcher/`
+  - launcher metadata/config moved under `.vsc_launcher/`
 - WSL distro detection hardened for null-separated `wsl.exe` output on Windows.
 - Wizard now skips WSL-related prompts automatically when WSL is unavailable.
 - Fixed generated Windows launcher for Remote WSL mode to reliably resolve Windows paths and avoid `wslpath` conversion failures.

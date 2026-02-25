@@ -246,10 +246,23 @@ try {
   Assert-Contains $gitignoreText2 "# >>> codex-session-isolator >>>" "Managed gitignore block start missing."
   Assert-Contains $gitignoreText2 ".vsc_launcher/" "Expected metadata folder ignore entry missing."
 
+  Write-Host "[test] Case 2.1: wizard creates safety backups before overwriting files"
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
+  $backupRoot2 = Join-Path $meta2 "backups"
+  Assert-True (Test-Path -LiteralPath $backupRoot2 -PathType Container) "Backup root was not created."
+  $latestBackup2 = Get-ChildItem -LiteralPath $backupRoot2 -Directory |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+  Assert-True ($null -ne $latestBackup2) "No backup session folder found."
+  Assert-True (Test-Path -LiteralPath (Join-Path $latestBackup2.FullName ".vscode\settings.json") -PathType Leaf) "Expected backup for .vscode/settings.json not found."
+  Assert-True (Test-Path -LiteralPath (Join-Path $latestBackup2.FullName ".gitignore") -PathType Leaf) "Expected backup for .gitignore not found."
+
   $dryRun2 = Invoke-RunnerDryRun -RunnerPath $runner2
   Assert-True ($dryRun2.ExitCode -eq 0) "Runner dry-run failed in baseline case."
   Assert-Contains $dryRun2.Output "[dry-run] VSCode user-data-dir:" "Expected local user-data-dir label in dry-run output."
   Assert-Contains $dryRun2.Output ".vsc_launcher\vscode-user-data" "Expected local user-data-dir path segment in dry-run output."
+  $codex2 = Join-Path $case2 ".codex"
+  Assert-True (Test-Path -LiteralPath $codex2 -PathType Container) "Expected .codex directory to be created by runner."
 
   $run2 = Invoke-RunnerWithMockCode -RunnerPath $runner2
   Assert-True ($run2.ExitCode -eq 0) ("Runner execution failed in baseline case. Output: " + $run2.Output)

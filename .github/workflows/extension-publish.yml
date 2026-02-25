@@ -1,0 +1,153 @@
+name: Extension Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Publish channel
+        required: true
+        default: pre-release
+        type: choice
+        options:
+          - pre-release
+          - stable
+  push:
+    branches: ["main"]
+    paths:
+      - "extension/**"
+      - ".github/workflows/extension-publish.yml"
+
+concurrency:
+  group: extension-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish VS Code extension
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && vars.MARKETPLACE_AUTO_PUBLISH_MAIN == 'true')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install and compile extension
+        working-directory: extension
+        run: |
+          npm ci
+          npm run compile
+
+      - name: Resolve publish channel
+        id: channel
+        shell: bash
+        run: |
+          channel="pre-release"
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            channel="stable"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            channel="${{ github.event.inputs.channel }}"
+          fi
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate VSCE_PAT
+        if: ${{ secrets.VSCE_PAT == '' }}
+        run: |
+          echo "Missing required repository secret: VSCE_PAT"
+          echo "Create it from a Visual Studio Marketplace Personal Access Token."
+          exit 1
+
+      - name: Validate release tag matches extension version
+        if: steps.channel.outputs.channel == 'stable' && github.event_name == 'release'
+        shell: bash
+        run: |
+          version=$(node -p "require('./extension/package.json').version")
+          expected_tag="v${version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Release tag (${GITHUB_REF_NAME}) must match extension version (${expected_tag})."
+            exit 1
+          fi
+
+      - name: Prepare unique pre-release version
+        if: steps.channel.outputs.channel == 'pre-release'
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const packagePath = 'extension/package.json';
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          const stable = pkg.version.split('-')[0];
+          const parts = stable.split('.').map((n) => Number(n));
+          if (parts.length !== 3 || parts.some(Number.isNaN)) {
+            throw new Error(`Unsupported version format: ${pkg.version}`);
+          }
+          parts[2] += 1;
+          pkg.version = `${parts.join('.')}-dev.${process.env.GITHUB_RUN_NUMBER}`;
+          fs.writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
+          console.log(`Prepared pre-release version: ${pkg.version}`);
+          NODE
+
+      - name: Package extension
+        working-directory: extension
+        run: |
+          rm -f ./*.vsix ./*.vsix.sha256
+          npm run package
+
+      - name: Generate checksum
+        id: package
+        working-directory: extension
+        shell: bash
+        run: |
+          vsix_file="$(ls -1t *.vsix | head -n 1)"
+          if [[ -z "$vsix_file" ]]; then
+            echo "No VSIX file found after packaging."
+            exit 1
+          fi
+          sha256sum "$vsix_file" > "${vsix_file}.sha256"
+          echo "vsix_file=${vsix_file}" >> "$GITHUB_OUTPUT"
+          echo "vsix_path=extension/${vsix_file}" >> "$GITHUB_OUTPUT"
+          echo "sha_path=extension/${vsix_file}.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-vsix-${{ steps.channel.outputs.channel }}-${{ github.run_number }}
+          path: |
+            ${{ steps.package.outputs.vsix_path }}
+            ${{ steps.package.outputs.sha_path }}
+
+      - name: Publish pre-release to Visual Studio Marketplace
+        if: steps.channel.outputs.channel == 'pre-release'
+        working-directory: extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx @vscode/vsce publish --pre-release --no-dependencies --packagePath "${{ steps.package.outputs.vsix_file }}" --skip-duplicate
+
+      - name: Publish stable release to Visual Studio Marketplace
+        if: steps.channel.outputs.channel == 'stable'
+        working-directory: extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx @vscode/vsce publish --no-dependencies --packagePath "${{ steps.package.outputs.vsix_file }}" --skip-duplicate
+
+      - name: Upload release assets (stable)
+        if: steps.channel.outputs.channel == 'stable' && github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.package.outputs.vsix_path }}
+            ${{ steps.package.outputs.sha_path }}

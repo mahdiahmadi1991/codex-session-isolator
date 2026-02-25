@@ -1,0 +1,113 @@
+# VS Code Marketplace Preparation
+
+This checklist prepares the `extension/` package for publishing.
+
+Current extension identifier:
+
+- `2ma.codex-project-isolator`
+
+## Metadata checklist
+
+- `extension/package.json`
+  - `publisher`
+  - `name`, `displayName`, `description`
+  - `icon`
+  - `repository`, `homepage`, `bugs`, `qna`
+  - `keywords`, `categories`
+  - `license`
+- `extension/README.md` is user-facing and complete.
+- `extension/CHANGELOG.md` exists.
+- `extension/LICENSE` exists.
+
+## Build and package
+
+```bash
+cd extension
+npm install
+npm run compile
+npm run package
+```
+
+Output:
+
+- `extension/codex-project-isolator-<version>.vsix`
+
+## Local install test
+
+```bash
+code --install-extension extension/codex-project-isolator-<version>.vsix --force
+code --list-extensions | findstr codex-project-isolator
+```
+
+## Manual smoke test
+
+1. Run `Codex Session Isolator: Initialize Launcher`.
+2. Run `Codex Session Isolator: Reopen With Launcher`.
+3. Verify project-local `CODEX_HOME`.
+4. Check `.vsc_launcher/logs`.
+
+## Publish (when ready)
+
+```bash
+cd extension
+npx @vscode/vsce publish
+```
+
+Alternative explicit version bump:
+
+```bash
+npx @vscode/vsce publish minor
+```
+
+Prerequisites:
+
+- Azure DevOps / Visual Studio Marketplace publisher access
+- `vsce` authenticated (`vsce login <publisher>`)
+
+## GitHub Actions publish automation
+
+Workflow file:
+
+- `.github/workflows/extension-publish.yml`
+- `.github/workflows/security.yml` (ongoing security checks)
+
+Supported triggers:
+
+- `release.published` -> stable publish
+- `workflow_dispatch` -> manual publish (`pre-release` or `stable`)
+- `push` to `main` (only when repository variable `MARKETPLACE_AUTO_PUBLISH_MAIN=true`) -> auto pre-release publish
+
+Workflow outputs:
+
+- VSIX package artifact
+- SHA-256 checksum file (`*.vsix.sha256`)
+- On stable release event, VSIX and checksum are attached to the GitHub release
+
+Required repository secret:
+
+- `VSCE_PAT` (Visual Studio Marketplace PAT with extension publish permissions)
+
+Recommended rollout:
+
+1. Keep `MARKETPLACE_AUTO_PUBLISH_MAIN` unset (or `false`) until first stable release is published.
+2. Validate with `workflow_dispatch` in `pre-release` mode.
+3. Publish stable via GitHub Release tag matching extension version (`v<version>`).
+4. Enable `MARKETPLACE_AUTO_PUBLISH_MAIN=true` only if you want automatic pre-release on every `main` change.
+
+## Integrity verification (consumer side)
+
+After downloading release assets:
+
+Windows PowerShell:
+
+```powershell
+Get-FileHash .\codex-project-isolator-<version>.vsix -Algorithm SHA256
+Get-Content .\codex-project-isolator-<version>.vsix.sha256
+```
+
+Linux/macOS:
+
+```bash
+sha256sum codex-project-isolator-<version>.vsix
+cat codex-project-isolator-<version>.vsix.sha256
+```

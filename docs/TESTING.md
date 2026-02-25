@@ -190,3 +190,19 @@ Expected:
 
 - Previous answers are reused from `.vsc_launcher/wizard.defaults.json`.
 
+## 12) Backup safety on overwrite
+
+Steps:
+
+1. Run wizard once on a project target.
+2. Run wizard again on the same target (with any answers).
+3. Inspect backup folder:
+   - `<target>\.vsc_launcher\backups\`
+
+Expected:
+
+- A new timestamped backup session folder exists.
+- Backup session contains previous copies of managed files such as:
+  - `.vscode/settings.json`
+  - `.gitignore`
+  - launcher/config files when they existed before overwrite.

@@ -1,1 +1,9 @@
 * @mahdiahmadi1991
+
+# Keep release and security automation changes under direct owner review.
+.github/workflows/* @mahdiahmadi1991
+
+# Launcher and extension runtime paths.
+tools/* @mahdiahmadi1991
+launchers/* @mahdiahmadi1991
+extension/* @mahdiahmadi1991

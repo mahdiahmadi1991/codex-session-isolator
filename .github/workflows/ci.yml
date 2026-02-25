@@ -6,6 +6,30 @@ on:
   pull_request:
 
 jobs:
+  extension-build:
+    name: Extension build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Build extension
+        working-directory: extension
+        run: |
+          npm ci
+          npm run compile
+
+      - name: Verify bundled wizard sync
+        run: |
+          git diff --exit-code -- extension/scripts/vsc-launcher-wizard.ps1
+
   windows-pwsh:
     name: Windows tests
     runs-on: windows-latest
