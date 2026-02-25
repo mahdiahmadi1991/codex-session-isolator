@@ -1,0 +1,29 @@
+{
+  "folders": [
+    {
+      "name": "codex-session-isolator",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "chatgpt.openOnStartup": true,
+    "chatgpt.runCodexInWindowsSubsystemForLinux": false,
+    "files.exclude": {
+      "**/.vsc_launcher": true,
+      "**/*.vsix": true,
+      "**/*.vsix.sha256": true
+    },
+    "search.exclude": {
+      "**/.vsc_launcher": true,
+      "**/node_modules": true,
+      "**/*.vsix": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode.powershell",
+      "github.vscode-github-actions",
+      "dbaeumer.vscode-eslint"
+    ]
+  }
+}
