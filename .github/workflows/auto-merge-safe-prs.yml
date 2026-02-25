@@ -18,6 +18,34 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request;
+            async function disableAutoMergeIfEnabled(reason) {
+              try {
+                await github.graphql(
+                  `
+                  mutation DisableAutoMerge($pullRequestId: ID!) {
+                    disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                      pullRequest {
+                        number
+                      }
+                    }
+                  }
+                  `,
+                  { pullRequestId: pr.node_id }
+                );
+                core.info(`Auto-merge disabled for PR #${pr.number}. Reason: ${reason}`);
+              } catch (error) {
+                const message = String(error?.message || error);
+                if (
+                  message.includes("is not enabled") ||
+                  message.includes("Auto merge is not enabled")
+                ) {
+                  core.info(`Auto-merge was already disabled for PR #${pr.number}.`);
+                  return;
+                }
+                throw error;
+              }
+            }
+
             if (!pr) {
               core.info("No pull request payload.");
               return;
@@ -25,12 +53,14 @@ jobs:
 
             if (pr.draft) {
               core.info("Draft PR; skipping.");
+              await disableAutoMergeIfEnabled("PR is draft");
               return;
             }
 
             const baseRef = pr.base.ref;
             if (!["pre-release", "main"].includes(baseRef)) {
               core.info(`Base branch '${baseRef}' is not eligible.`);
+              await disableAutoMergeIfEnabled(`ineligible base branch: ${baseRef}`);
               return;
             }
 
@@ -40,6 +70,7 @@ jobs:
 
             if (!hasSafeLabel && !isDependabot) {
               core.info("PR is neither dependabot nor labeled automerge:safe.");
+              await disableAutoMergeIfEnabled("missing automerge:safe label and not dependabot");
               return;
             }
 
@@ -55,6 +86,9 @@ jobs:
               "PRIVACY.md",
               ".github/dependabot.yml"
             ]);
+            const disallowedFiles = new Set([
+              ".github/workflows/auto-merge-safe-prs.yml"
+            ]);
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
@@ -65,12 +99,16 @@ jobs:
 
             if (files.length === 0) {
               core.info("No changed files; skipping.");
+              await disableAutoMergeIfEnabled("PR has no changed files");
               return;
             }
 
             const unsafeFiles = files
               .map((f) => f.filename)
               .filter((filename) => {
+                if (disallowedFiles.has(filename)) {
+                  return true;
+                }
                 if (safeFiles.has(filename)) {
                   return false;
                 }
@@ -80,6 +118,9 @@ jobs:
             if (unsafeFiles.length > 0) {
               core.notice(
                 `Auto-merge skipped because unsafe paths were changed: ${unsafeFiles.join(", ")}`
+              );
+              await disableAutoMergeIfEnabled(
+                `unsafe files changed: ${unsafeFiles.join(", ")}`
               );
               return;
             }
@@ -111,4 +152,3 @@ jobs:
               }
               throw error;
             }
-
