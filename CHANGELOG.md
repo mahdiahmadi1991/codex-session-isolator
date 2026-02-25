@@ -37,6 +37,9 @@ All notable changes to this project are documented in this file.
 - Marketplace publish workflow now packages VSIX once, publishes from `--packagePath`, and produces SHA-256 checksum artifacts (attached on stable releases).
 - Windows integration tests now validate backup creation for wizard overwrites.
 - Documentation now explicitly clarifies project-isolated chat visibility and per-project account/API-key context.
+- Extension versioning policy now requires stable git tags to match `extension/package.json` (`v<version>`).
+- Stable manual publish flow now requires `ref=main` and explicit `release_tag` matching extension version.
+- Extension manifest is now non-preview for stable release discipline.
 
 ## [0.3.2] - 2026-02-25
 
