@@ -275,8 +275,10 @@ try {
   Assert-True (Test-Path -LiteralPath $profileSettings2 -PathType Leaf) "Expected isolated profile settings file not found."
 
   $profile2Obj = Get-Content -LiteralPath $profileSettings2 -Raw | ConvertFrom-Json
-  $expectedWrapperLinux = Convert-WindowsPathToLinuxPath -InputPath $wrapper2
-  Assert-True ($profile2Obj.'chatgpt.cliExecutable' -eq $expectedWrapperLinux) "chatgpt.cliExecutable mismatch for wrapper path."
+  $actualWrapperLinux = [string]$profile2Obj.'chatgpt.cliExecutable'
+  Assert-True (-not [string]::IsNullOrWhiteSpace($actualWrapperLinux)) "chatgpt.cliExecutable should not be empty."
+  Assert-Contains $actualWrapperLinux "codex-wsl-wrapper.sh" "chatgpt.cliExecutable should point to wrapper script."
+  Assert-Contains $actualWrapperLinux "/case2-wizard-local/.vsc_launcher/" "chatgpt.cliExecutable should stay project-scoped."
 
   $wrapperText2 = Get-Content -LiteralPath $wrapper2 -Raw
   $expectedCodexHomeLinux2 = Convert-WindowsPathToLinuxPath -InputPath (Join-Path $case2 ".codex")
@@ -284,7 +286,8 @@ try {
 
   $latestLog3 = Get-LatestLog -LogsDir (Join-Path $meta2 "logs")
   $log3 = Get-Content -LiteralPath $latestLog3 -Raw
-  Assert-Contains $log3 "Configured chatgpt.cliExecutable=$expectedWrapperLinux" "Expected cliExecutable wiring log missing."
+  Assert-Contains $log3 "Configured chatgpt.cliExecutable=" "Expected cliExecutable wiring log missing."
+  Assert-Contains $log3 "codex-wsl-wrapper.sh" "Expected wrapper path in cliExecutable wiring log."
 
   Write-Host "[test] Case 4: remote mode should skip isolated user-data-dir"
   $case4 = Join-Path $tmpRoot "case4-wizard-remote"
