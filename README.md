@@ -33,7 +33,7 @@ This isolates Codex state per project without changing global/default behavior.
 - `launchers/codex-session-isolator.bat` - Canonical batch launcher for Windows.
 - `launchers/codex-session-isolator.sh` - Canonical launcher for Linux/macOS.
 - `tests/Test-Windows.ps1` - End-to-end Windows integration tests.
-- `tests/test-linux.sh` - End-to-end Linux integration tests.
+- `tests/test-linux.sh` - End-to-end Unix integration tests (Linux and macOS).
 - `docs/USAGE.md` - Usage reference (workspace or folder target).
 - `docs/TESTING.md` - Manual test matrix.
 

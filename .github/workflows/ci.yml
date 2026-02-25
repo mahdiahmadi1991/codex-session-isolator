@@ -29,3 +29,15 @@ jobs:
         run: |
           chmod +x tests/test-linux.sh
           ./tests/test-linux.sh
+
+  macos-bash:
+    name: macOS tests
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run macOS integration tests
+        run: |
+          chmod +x tests/test-linux.sh
+          ./tests/test-linux.sh

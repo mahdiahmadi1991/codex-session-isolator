@@ -6,6 +6,7 @@ Automated CI coverage:
 
 - Windows: `tests/Test-Windows.ps1`
 - Linux: `tests/test-linux.sh`
+- macOS: `tests/test-linux.sh`
 
 ## 0) Wizard generation flow
 
