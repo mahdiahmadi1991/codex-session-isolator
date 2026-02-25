@@ -168,7 +168,7 @@ jobs:
           echo "sha_path=extension/${vsix_file}.sha256" >> "$GITHUB_OUTPUT"
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: extension-vsix-${{ steps.channel.outputs.channel }}-${{ github.run_number }}
           path: |
