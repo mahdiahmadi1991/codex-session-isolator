@@ -115,7 +115,7 @@ function Invoke-Wizard {
     Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
 
     $debugArg = if ($DebugMode) { " --debug" } else { "" }
-    $cmd = "tools\new-vsc-launcher.bat ""$TargetPath""" + $debugArg + " < ""$inputFile"""
+    $cmd = "tools\vsc-launcher.bat ""$TargetPath""" + $debugArg + " < ""$inputFile"""
     Push-Location $RepoRoot
     try {
       cmd /c $cmd | Out-Host
@@ -175,10 +175,10 @@ try {
   Write-Host "[test] Case 0: wizard helper usage output"
   Push-Location $repoRoot
   try {
-    $helpBat = cmd /c "tools\new-vsc-launcher.bat --help" 2>&1 | Out-String
+    $helpBat = cmd /c "tools\vsc-launcher.bat --help" 2>&1 | Out-String
     Assert-Contains $helpBat "Usage:" "Batch helper help output mismatch."
 
-    $helpPs = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\new-vsc-launcher.ps1") -Arguments @("--help")
+    $helpPs = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\vsc-launcher.ps1") -Arguments @("--help")
     Assert-True ($helpPs.ExitCode -eq 0) "PowerShell helper help command failed."
     Assert-Contains $helpPs.Output "Usage:" "PowerShell helper help output mismatch."
   } finally {
@@ -384,3 +384,4 @@ try {
     Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
+

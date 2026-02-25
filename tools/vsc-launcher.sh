@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HELPER_PS1="$SCRIPT_DIR/new-vsc-launcher.ps1"
+HELPER_PS1="$SCRIPT_DIR/vsc-launcher.ps1"
 
 if [[ ! -f "$HELPER_PS1" ]]; then
   echo "Helper script not found: $HELPER_PS1"
@@ -20,3 +20,4 @@ else
 fi
 
 "$PS_CMD" -NoProfile -ExecutionPolicy Bypass -File "$HELPER_PS1" "$@"
+

@@ -13,7 +13,7 @@ Automated CI coverage:
 Command:
 
 ```bat
-.\tools\new-vsc-launcher.bat "C:\path\to\repo"
+.\tools\vsc-launcher.bat "C:\path\to\repo"
 ```
 
 Expected:
@@ -172,7 +172,7 @@ Expected:
 Command:
 
 ```bat
-.\tools\new-vsc-launcher.bat "C:\path\to\repo" --debug
+.\tools\vsc-launcher.bat "C:\path\to\repo" --debug
 ```
 
 Expected:
@@ -190,3 +190,4 @@ Steps:
 Expected:
 
 - Previous answers are reused from `.vsc_launcher/wizard.defaults.json`.
+

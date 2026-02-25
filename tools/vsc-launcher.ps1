@@ -7,11 +7,11 @@ $ErrorActionPreference = "Stop"
 
 function Show-Usage {
   Write-Host "Usage:"
-  Write-Host "  new-vsc-launcher [<target-path>] [--debug] [--help]"
+  Write-Host "  vsc-launcher [<target-path>] [--debug] [--help]"
   Write-Host ""
   Write-Host "Examples:"
-  Write-Host "  new-vsc-launcher ""C:\dev\my-app"""
-  Write-Host "  new-vsc-launcher ""/home/mehdi/projects/my-app"" --debug"
+  Write-Host "  vsc-launcher ""C:\dev\my-app"""
+  Write-Host "  vsc-launcher ""/home/mehdi/projects/my-app"" --debug"
 }
 
 $targetPath = $null
@@ -76,3 +76,4 @@ if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
   }
 }
 exit $LASTEXITCODE
+

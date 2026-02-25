@@ -15,7 +15,8 @@ shift
 goto parse_args
 
 :run
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%new-vsc-launcher.ps1"!FORWARD_ARGS!
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%vsc-launcher.ps1"!FORWARD_ARGS!
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%
+

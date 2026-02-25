@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LAUNCHER="$REPO_ROOT/launchers/codex-session-isolator.sh"
-WIZARD_HELPER="$REPO_ROOT/tools/new-vsc-launcher.sh"
+WIZARD_HELPER="$REPO_ROOT/tools/vsc-launcher.sh"
 
 assert_contains() {
   local text="$1"
@@ -81,3 +81,4 @@ assert_contains "$arg_output" "Unknown second argument:" "Invalid argument messa
 rm -f /tmp/csi-linux-arg.out
 
 echo "[test] All Linux tests passed."
+

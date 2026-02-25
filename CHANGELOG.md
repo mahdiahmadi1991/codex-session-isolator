@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Added a stronger cross-platform wizard helper (`tools/new-vsc-launcher.ps1`) with Windows/Linux/macOS entrypoints and consistent argument handling (`--help`, `--debug`, `--target`).
+- Added a stronger cross-platform wizard helper (`tools/vsc-launcher.ps1`) with Windows/Linux/macOS entrypoints and consistent argument handling (`--help`, `--debug`, `--target`).
 - Remote WSL launcher execution now runs via a temporary UTF-8 bash script file (instead of piping script text), improving reliability on Windows PowerShell.
 - Remote WSL mode no longer creates or uses `.vsc_launcher/vscode-user-data`, since WSL `code` CLI does not support `--user-data-dir`.
 - Launcher logs now include explicit Remote WSL notes for easier troubleshooting.
@@ -26,7 +26,7 @@ All notable changes to this project are documented in this file.
 
 - Interactive launcher wizard:
   - `tools/New-VscLauncherWizard.ps1`
-  - `tools/new-vsc-launcher.bat`
+  - `tools/vsc-launcher.bat`
 - Wizard-driven generation of project-specific launchers from a target path.
 - Optional launcher logging support in generated launcher.
 
@@ -87,3 +87,4 @@ All notable changes to this project are documented in this file.
   - `launchers/codex-workspace-launcher.sh`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.
+

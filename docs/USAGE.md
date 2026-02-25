@@ -20,23 +20,23 @@ Use the wizard to generate a project-specific launcher in your target folder.
 Windows (batch entrypoint):
 
 ```bat
-.\tools\new-vsc-launcher.bat "C:\path\to\project"
-.\tools\new-vsc-launcher.bat "C:\path\to\project" --debug
+.\tools\vsc-launcher.bat "C:\path\to\project"
+.\tools\vsc-launcher.bat "C:\path\to\project" --debug
 ```
 
 Windows (PowerShell helper):
 
 ```powershell
-.\tools\new-vsc-launcher.ps1 "C:\path\to\project"
-.\tools\new-vsc-launcher.ps1 "C:\path\to\project" --debug
+.\tools\vsc-launcher.ps1 "C:\path\to\project"
+.\tools\vsc-launcher.ps1 "C:\path\to\project" --debug
 ```
 
 Linux/macOS (helper):
 
 ```bash
-chmod +x ./tools/new-vsc-launcher.sh
-./tools/new-vsc-launcher.sh "/path/to/project"
-./tools/new-vsc-launcher.sh "/path/to/project" --debug
+chmod +x ./tools/vsc-launcher.sh
+./tools/vsc-launcher.sh "/path/to/project"
+./tools/vsc-launcher.sh "/path/to/project" --debug
 ```
 
 Direct wizard:
@@ -116,3 +116,4 @@ chmod +x ./launchers/codex-session-isolator.sh
 - The launcher creates `.codex` inside the target directory if missing.
 - The launcher does not create symlinks to `~/.codex`.
 - For WSL mode, `code` must be available in WSL PATH.
+
