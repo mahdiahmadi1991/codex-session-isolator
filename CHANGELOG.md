@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Remote WSL mode no longer creates or uses `.vsc_launcher/vscode-user-data`, since WSL `code` CLI does not support `--user-data-dir`.
 - Launcher logs now include explicit Remote WSL notes for easier troubleshooting.
 - Documentation has been unified for local vs. Remote WSL behavior and final release readiness.
+- CI now runs comprehensive automated integration tests for Windows (`tests/Test-Windows.ps1`) and Linux (`tests/test-linux.sh`).
 
 ### Removed
 

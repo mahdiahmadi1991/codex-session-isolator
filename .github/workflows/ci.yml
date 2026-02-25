@@ -7,62 +7,25 @@ on:
 
 jobs:
   windows-pwsh:
-    name: Windows PowerShell checks
+    name: Windows tests
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Parse PowerShell script
+      - name: Run Windows integration tests
         shell: pwsh
         run: |
-          $files = @(
-            "launchers/CodexSessionIsolator.ps1",
-            "tools/New-VscLauncherWizard.ps1"
-          )
-          foreach ($file in $files) {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors -and $errors.Count -gt 0) {
-              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
-              exit 1
-            }
-          }
-
-      - name: Dry-run PowerShell launcher (folder + workspace)
-        shell: pwsh
-        run: |
-          $tmp = Join-Path $env:RUNNER_TEMP "codex-session-isolator"
-          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-          $ws = Join-Path $tmp "Sample.code-workspace"
-          Set-Content -Path $ws -Value "{}" -NoNewline
-
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsolator.ps1 -TargetPath $tmp -DryRun
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsolator.ps1 -TargetPath $ws -DryRun
-
-      - name: Dry-run batch wrapper
-        shell: cmd
-        run: |
-          set TMP_DIR=%RUNNER_TEMP%\codex-session-isolator-bat
-          if not exist "%TMP_DIR%" mkdir "%TMP_DIR%"
-          call launchers\codex-session-isolator.bat "%TMP_DIR%" -DryRun
+          ./tests/Test-Windows.ps1
 
   linux-bash:
-    name: Linux Bash checks
+    name: Linux tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bash syntax check
+      - name: Run Linux integration tests
         run: |
-          bash -n launchers/codex-session-isolator.sh
-
-      - name: Dry-run bash launcher (folder + workspace)
-        run: |
-          TMP_DIR="$(mktemp -d)"
-          WORKSPACE_FILE="$TMP_DIR/sample.code-workspace"
-          printf '{}' > "$WORKSPACE_FILE"
-
-          ./launchers/codex-session-isolator.sh "$TMP_DIR" --dry-run
-          ./launchers/codex-session-isolator.sh "$WORKSPACE_FILE" --dry-run
+          chmod +x tests/test-linux.sh
+          ./tests/test-linux.sh

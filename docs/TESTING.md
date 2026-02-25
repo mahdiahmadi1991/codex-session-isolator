@@ -2,6 +2,11 @@
 
 Run tests manually in your own environment.
 
+Automated CI coverage:
+
+- Windows: `tests/Test-Windows.ps1`
+- Linux: `tests/test-linux.sh`
+
 ## 0) Wizard generation flow
 
 Command:

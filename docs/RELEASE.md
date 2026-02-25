@@ -6,20 +6,14 @@ Run from repository root:
 
 ```powershell
 git status -sb
-powershell -NoProfile -Command "$files=@('launchers/CodexSessionIsolator.ps1','tools/New-VscLauncherWizard.ps1'); foreach($f in $files){$errors=$null; [System.Management.Automation.Language.Parser]::ParseFile($f,[ref]$null,[ref]$errors)|Out-Null; if($errors){$errors|ForEach-Object{Write-Error ($f + ': ' + $_.Message)}; exit 1}}"
+./tests/Test-Windows.ps1
 ```
 
-Dry-run checks:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsolator.ps1 -TargetPath "$PWD" -DryRun
-cmd /c "call launchers\codex-session-isolator.bat %CD% -DryRun"
-```
-
-Linux shell syntax check (run in Linux/macOS or WSL):
+Linux test checks (WSL/Linux/macOS):
 
 ```bash
-bash -n launchers/codex-session-isolator.sh
+chmod +x tests/test-linux.sh
+./tests/test-linux.sh
 ```
 
 ## 2) Documentation checks
