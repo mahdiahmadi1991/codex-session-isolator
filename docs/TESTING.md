@@ -22,6 +22,9 @@ Expected:
   - `chatgpt.openOnStartup = true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux = <selected>`
 - If launch target is a workspace file, it also writes the same values into `<name>.code-workspace -> settings`.
+- In local Windows mode, it creates project-scoped VS Code user data under `.vsc_launcher/vscode-user-data`.
+- In Remote WSL mode, it does not create `.vsc_launcher/vscode-user-data`.
+- In local Windows + Codex-in-WSL mode, it sets profile-level `chatgpt.cliExecutable` to `.vsc_launcher/codex-wsl-wrapper.sh`.
 
 ## 0.1) No WSL available
 
@@ -43,6 +46,8 @@ Expected:
 
 - VS Code opens the workspace locally (Windows).
 - `C:\path\to\repo\.codex` exists.
+- `C:\path\to\repo\.vsc_launcher\vscode-user-data` exists.
+- `C:\path\to\repo\.vsc_launcher\vscode-user-data\User\settings.json` contains `chatgpt.cliExecutable` pointing to the generated WSL wrapper.
 
 ## 2) Windows local folder path (no workspace file)
 
@@ -118,13 +123,21 @@ Expected:
 
 Steps:
 
-1. Launch project A using launcher.
-2. Launch project B using launcher.
+1. Generate launchers for project A and project B with `chatgpt.runCodexInWindowsSubsystemForLinux=true`.
+2. Launch both projects at nearly the same time (open A and B with their own `vsc_launcher.bat`).
+3. Trigger Codex in each VS Code window.
+4. Check each project logs:
+   - `<project-a>\.vsc_launcher\logs\launcher-*.log`
+   - `<project-b>\.vsc_launcher\logs\launcher-*.log`
+   - `<project-a>\.vsc_launcher\logs\codex-wrapper.log`
+   - `<project-b>\.vsc_launcher\logs\codex-wrapper.log`
 
 Expected:
 
 - A and B each keep separate `.codex` directories.
 - State does not leak between projects.
+- In launcher logs, `CODEX_HOME` points to each project's own `.codex`.
+- In wrapper logs, `CODEX_HOME_FORCED` points to each project's own `.codex`.
 
 ## 8) Default behavior not affected
 

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-02-25
+
+### Changed
+
+- Remote WSL launcher execution now runs via a temporary UTF-8 bash script file (instead of piping script text), improving reliability on Windows PowerShell.
+- Remote WSL mode no longer creates or uses `.vsc_launcher/vscode-user-data`, since WSL `code` CLI does not support `--user-data-dir`.
+- Launcher logs now include explicit Remote WSL notes for easier troubleshooting.
+- Documentation has been unified for local vs. Remote WSL behavior and final release readiness.
+
+### Removed
+
+- Legacy compatibility launchers that duplicated canonical entry points:
+  - `launchers/CodexWorkspaceLauncher.ps1`
+  - `launchers/codex-workspace-launcher.sh`
+
 ## [0.3.0] - 2026-02-25
 
 ### Added
@@ -33,6 +48,9 @@ All notable changes to this project are documented in this file.
 - Launcher logging is now richer (run id, config snapshot, environment info, stack trace on failure, exit code).
 - Workspace setting `chatgpt.openOnStartup` is now always set to `true`.
 - For workspace targets, wizard now also writes `chatgpt.runCodexInWindowsSubsystemForLinux` directly into `.code-workspace` settings to avoid scope mismatch.
+- Generated launcher now starts VS Code with a project-scoped `--user-data-dir` (under `.vsc_launcher/`) so `CODEX_HOME` is applied even when another VS Code instance is already running.
+- Fixed local Windows + Codex-in-WSL isolation path by generating a project-scoped WSL CLI wrapper and wiring `chatgpt.cliExecutable` in isolated profile settings.
+- In Remote WSL mode, generated launcher now skips creating/using project `vscode-user-data` profile and launches via temp UTF-8 bash script execution for stable WSL invocation.
 
 ## [0.2.1] - 2026-02-25
 

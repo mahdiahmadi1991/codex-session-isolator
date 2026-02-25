@@ -36,6 +36,8 @@ Wizard outputs (Windows):
 - `<target>\.vsc_launcher\config.json`
 - `<target>\.vsc_launcher\wizard.defaults.json`
 - `<target>\.vsc_launcher\runner.ps1`
+- `<target>\.vsc_launcher\codex-wsl-wrapper.sh` (generated only for local Windows + Codex-in-WSL mode)
+- `<target>\.vsc_launcher\vscode-user-data\` (VS Code isolated process profile, local Windows mode only)
 - `<target>\.vsc_launcher\logs\` (wizard logs always, launcher logs in debug/`-Log`)
 
 Wizard behavior:
@@ -52,6 +54,9 @@ Wizard behavior:
 - Skips WSL-related questions automatically when WSL is unavailable.
 - Remembers previous answers and uses them as defaults for faster wizard runs.
 - Enables launcher logging only in wizard debug mode (`--debug`).
+- In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
+- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it.
+- For local Windows + Codex-in-WSL mode, automatically sets profile-scoped `chatgpt.cliExecutable` to a generated WSL wrapper so Codex app-server receives project `CODEX_HOME`.
 
 ## Windows
 

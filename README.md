@@ -71,6 +71,9 @@ Wizard defaults:
   - `chatgpt.openOnStartup=true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux=<selected>`
   in `.vscode/settings.json`, and also in `.code-workspace` settings when launch target is a workspace file.
+- In local Windows mode, generated launcher runs VS Code with a project-scoped `--user-data-dir` under `.vsc_launcher/` to ensure `CODEX_HOME` is applied reliably.
+- In Remote WSL mode, launcher skips isolated `--user-data-dir` because WSL `code` CLI does not support that option.
+- When `chatgpt.runCodexInWindowsSubsystemForLinux=true` and launch mode is local Windows, launcher configures an isolated `chatgpt.cliExecutable` wrapper in the project profile to force project `CODEX_HOME` for Codex app-server.
 
 ### Windows
 
@@ -98,6 +101,7 @@ chmod +x ./launchers/codex-session-isolator.sh
 
 - Usage: `docs/USAGE.md`
 - Test scenarios: `docs/TESTING.md`
+- Release steps: `docs/RELEASE.md`
 - Contribution guide: `CONTRIBUTING.md`
 - Security policy: `SECURITY.md`
 

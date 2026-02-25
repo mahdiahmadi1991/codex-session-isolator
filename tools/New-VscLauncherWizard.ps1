@@ -556,6 +556,7 @@ function New-WindowsLauncherFile {
     [string]$WorkspaceRelativePath,
     [bool]$UseRemoteWsl,
     [string]$WslDistro,
+    [bool]$CodexRunInWsl,
     [bool]$EnableLoggingByDefault
   )
 
@@ -572,6 +573,8 @@ function New-WindowsLauncherFile {
     workspaceRelativePath = $WorkspaceRelativePath
     useRemoteWsl = $UseRemoteWsl
     wslDistro = $WslDistro
+    codexRunInWsl = $CodexRunInWsl
+    forceIsolatedCodeProcess = $true
     enableLoggingByDefault = $EnableLoggingByDefault
     generatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
   }
@@ -646,6 +649,99 @@ function Convert-WindowsPathToLinuxPath {
   return $converted
 }
 
+function Convert-ToHashtable {
+  param([Parameter(Mandatory = $true)]$InputObject)
+
+  if ($InputObject -is [System.Collections.IDictionary]) {
+    $result = [ordered]@{}
+    foreach ($key in $InputObject.Keys) {
+      $result[$key] = $InputObject[$key]
+    }
+    return $result
+  }
+
+  $result = [ordered]@{}
+  foreach ($prop in $InputObject.PSObject.Properties) {
+    $result[$prop.Name] = $prop.Value
+  }
+  return $result
+}
+
+function Escape-BashSingleQuoted {
+  param([string]$Value)
+  $separator = "'" + '"' + "'" + '"' + "'"
+  return [string]::Join($separator, ($Value -split "'"))
+}
+
+function Ensure-CodexCliWrapperSetting {
+  param(
+    [string]$UserDataDir,
+    [bool]$EnableWrapper,
+    [string]$CodexHomeWindowsPath
+  )
+
+  $userDir = Join-Path $UserDataDir "User"
+  $settingsPath = Join-Path $userDir "settings.json"
+  New-Item -ItemType Directory -Force -Path $userDir | Out-Null
+
+  $settings = [ordered]@{}
+  if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
+    try {
+      $loaded = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+      if ($null -ne $loaded) {
+        $settings = Convert-ToHashtable -InputObject $loaded
+      }
+    } catch {
+      Copy-Item -LiteralPath $settingsPath -Destination ($settingsPath + ".bak") -Force -ErrorAction SilentlyContinue
+      $settings = [ordered]@{}
+    }
+  }
+
+  $wrapperPathWindows = Join-Path $PSScriptRoot "codex-wsl-wrapper.sh"
+  $wrapperPathLinux = Convert-WindowsPathToLinuxPath -InputPath $wrapperPathWindows -Distro ""
+  if (-not $EnableWrapper) {
+    if ($settings.Contains("chatgpt.cliExecutable") -and [string]$settings["chatgpt.cliExecutable"] -eq $wrapperPathLinux) {
+      $settings.Remove("chatgpt.cliExecutable") | Out-Null
+      Write-LauncherLog "Removed chatgpt.cliExecutable wrapper override."
+    }
+    Set-Content -LiteralPath $settingsPath -Value ($settings | ConvertTo-Json -Depth 20)
+    return
+  }
+
+  $codexHomeLinux = Convert-WindowsPathToLinuxPath -InputPath $CodexHomeWindowsPath -Distro ""
+  $logsDirWindows = Join-Path $PSScriptRoot "logs"
+  New-Item -ItemType Directory -Force -Path $logsDirWindows | Out-Null
+  $wrapperLogLinux = Convert-WindowsPathToLinuxPath -InputPath (Join-Path $logsDirWindows "codex-wrapper.log") -Distro ""
+
+  $wrapperLines = @(
+    "#!/usr/bin/env bash"
+    "set -euo pipefail"
+    "log_file='" + (Escape-BashSingleQuoted -Value $wrapperLogLinux) + "'"
+    "mkdir -p `"`$(dirname `"`$log_file`")`""
+    "original_codex_home=`"`${CODEX_HOME-}`""
+    "export CODEX_HOME='" + (Escape-BashSingleQuoted -Value $codexHomeLinux) + "'"
+    "resolved_codex_bin=`"`$(command -v codex 2>/dev/null || true)`""
+    "printf '%s CODEX_HOME_ORIGINAL=%s CODEX_HOME_FORCED=%s CODEX_BIN=%s ARGS=%s\n' `"`$(date '+%Y-%m-%d %H:%M:%S')`" `"`$original_codex_home`" `"`$CODEX_HOME`" `"`$resolved_codex_bin`" `"`$*`" >> `"`$log_file`""
+    "printf '%s PWD=%s HOME=%s\n' `"`$(date '+%Y-%m-%d %H:%M:%S')`" `"`$PWD`" `"`$HOME`" >> `"`$log_file`""
+    "exec codex `"`$@`""
+  )
+
+  $wrapperContent = ($wrapperLines -join "`n") + "`n"
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($wrapperPathWindows, $wrapperContent, $utf8NoBom)
+
+  try {
+    $escapedWrapper = Escape-BashSingleQuoted -Value $wrapperPathLinux
+    $null = & wsl.exe -- bash -lc ("chmod +x '" + $escapedWrapper + "'")
+  } catch {
+    Write-LauncherLog ("WARN=Failed to set executable permission for wrapper. error={0}" -f $_.Exception.Message)
+  }
+
+  $settings["chatgpt.cliExecutable"] = $wrapperPathLinux
+  Set-Content -LiteralPath $settingsPath -Value ($settings | ConvertTo-Json -Depth 20)
+  Write-LauncherLog ("Configured chatgpt.cliExecutable={0}" -f $wrapperPathLinux)
+}
+
 try {
   $configPath = Join-Path $PSScriptRoot "config.json"
   if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
@@ -666,10 +762,21 @@ try {
     $script:LogFilePath = Join-Path $logsDir ("launcher-{0}-{1}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $PID)
   }
 
+  $forceIsolatedCodeProcess = $true
+  if ($config.PSObject.Properties.Name -contains "forceIsolatedCodeProcess") {
+    $forceIsolatedCodeProcess = [bool]$config.forceIsolatedCodeProcess
+  }
+  $codexRunInWsl = $false
+  if ($config.PSObject.Properties.Name -contains "codexRunInWsl") {
+    $codexRunInWsl = [bool]$config.codexRunInWsl
+  }
+
   Write-LauncherLog "START"
   Write-LauncherLog ("ConfigPath={0}" -f $configPath)
   Write-LauncherLog ("Config={0}" -f (($config | ConvertTo-Json -Compress -Depth 20)))
   Write-LauncherLog ("User={0} Machine={1} PID={2} PS={3}" -f $env:USERNAME, $env:COMPUTERNAME, $PID, $PSVersionTable.PSVersion)
+  Write-LauncherLog ("ForceIsolatedCodeProcess={0}" -f $forceIsolatedCodeProcess)
+  Write-LauncherLog ("CodexRunInWsl={0}" -f $codexRunInWsl)
 
   $targetRoot = Split-Path -Parent $PSScriptRoot
   $launchTarget = if ($config.launchMode -eq "workspace") {
@@ -693,11 +800,32 @@ try {
   Write-LauncherLog ("LaunchTarget={0}" -f $launchTarget)
   Write-LauncherLog ("CODEX_HOME={0}" -f $codexHome)
 
+  $shouldUseIsolatedUserData = $forceIsolatedCodeProcess -and -not [bool]$config.useRemoteWsl
+  $userDataDir = $null
+  if ($shouldUseIsolatedUserData) {
+    $userDataDir = Join-Path $PSScriptRoot "vscode-user-data"
+    New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
+    Write-LauncherLog ("VSCodeUserDataDir={0}" -f $userDataDir)
+  } elseif ($forceIsolatedCodeProcess -and [bool]$config.useRemoteWsl) {
+    Write-LauncherLog "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode."
+  }
+
   if ($DryRun) {
     Write-Host ("[dry-run] Launch target: {0}" -f $launchTarget)
     Write-Host ("[dry-run] CODEX_HOME: {0}" -f $codexHome)
+    if ($shouldUseIsolatedUserData -and -not [string]::IsNullOrWhiteSpace($userDataDir)) {
+      Write-Host ("[dry-run] VSCode user-data-dir: {0}" -f $userDataDir)
+    }
     $script:ExitCode = 0
     return
+  }
+
+  $enableCodexCliWrapper = $codexRunInWsl -and -not [bool]$config.useRemoteWsl
+  if ($shouldUseIsolatedUserData -and -not [string]::IsNullOrWhiteSpace($userDataDir)) {
+    Ensure-CodexCliWrapperSetting `
+      -UserDataDir $userDataDir `
+      -EnableWrapper $enableCodexCliWrapper `
+      -CodexHomeWindowsPath $codexHome
   }
 
   if ($config.useRemoteWsl) {
@@ -729,36 +857,109 @@ if ! command -v code >/dev/null 2>&1; then
 fi
 code --new-window "`$target"
 "@
+    $bashScript = ($bashScript -replace "`r`n", "`n") -replace "`r", "`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $tempScriptWindows = Join-Path $env:TEMP ("csi-wsl-" + $script:RunId + ".sh")
+    [System.IO.File]::WriteAllText($tempScriptWindows, $bashScript, $utf8NoBom)
+    $tempScriptLinux = Convert-WindowsPathToLinuxPath -InputPath $tempScriptWindows -Distro $config.wslDistro
 
     Write-LauncherLog ("Mode=RemoteWSL Distro={0}" -f $config.wslDistro)
     Write-LauncherLog ("WSLTarget={0}" -f $linuxTarget)
-    $bashScript | wsl.exe -d $config.wslDistro -- bash -s --
-    if ($LASTEXITCODE -ne 0) {
-      Fail "Failed to launch VS Code in WSL mode." 5
+    Write-LauncherLog ("WSLScriptLinuxPath={0}" -f $tempScriptLinux)
+    if ($script:EnableLog -and -not [string]::IsNullOrWhiteSpace($script:LogFilePath)) {
+      $launcherLogsDir = Split-Path -Parent $script:LogFilePath
+      if (-not [string]::IsNullOrWhiteSpace($launcherLogsDir)) {
+        $scriptSnapshotPath = Join-Path $launcherLogsDir ("remote-wsl-script-{0}.sh" -f $script:RunId)
+        [System.IO.File]::WriteAllText($scriptSnapshotPath, $bashScript, $utf8NoBom)
+        Write-LauncherLog ("WSLScriptSnapshot={0}" -f $scriptSnapshotPath)
+      }
+    }
+
+    $outPath = Join-Path $env:TEMP ("csi-wsl-" + $script:RunId + ".out")
+    $errPath = Join-Path $env:TEMP ("csi-wsl-" + $script:RunId + ".err")
+    $remoteExitCode = 0
+    $remoteOutputText = ""
+    try {
+      $process = Start-Process `
+        -FilePath "wsl.exe" `
+        -ArgumentList @("-d", [string]$config.wslDistro, "--", "bash", $tempScriptLinux) `
+        -NoNewWindow `
+        -Wait `
+        -PassThru `
+        -RedirectStandardOutput $outPath `
+        -RedirectStandardError $errPath
+
+      $remoteExitCode = $process.ExitCode
+      $stdoutText = if (Test-Path -LiteralPath $outPath -PathType Leaf) { Get-Content -LiteralPath $outPath -Raw } else { "" }
+      $stderrText = if (Test-Path -LiteralPath $errPath -PathType Leaf) { Get-Content -LiteralPath $errPath -Raw } else { "" }
+      $remoteOutputText = ($stdoutText + "`n" + $stderrText).Trim()
+    } finally {
+      if (Test-Path -LiteralPath $tempScriptWindows -PathType Leaf) {
+        Remove-Item -LiteralPath $tempScriptWindows -Force -ErrorAction SilentlyContinue
+      }
+      if (Test-Path -LiteralPath $outPath -PathType Leaf) {
+        Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
+      }
+      if (Test-Path -LiteralPath $errPath -PathType Leaf) {
+        Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($remoteOutputText)) {
+      foreach ($line in ($remoteOutputText -split "`r?`n")) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+          Write-LauncherLog ("WSL={0}" -f $line)
+        }
+      }
+    }
+    if ($remoteExitCode -ne 0) {
+      if ([string]::IsNullOrWhiteSpace($remoteOutputText)) {
+        Fail ("Failed to launch VS Code in WSL mode. ExitCode={0}" -f $remoteExitCode) 5
+      }
+      Fail ("Failed to launch VS Code in WSL mode. ExitCode={0}. Output={1}" -f $remoteExitCode, $remoteOutputText) 5
     }
   } else {
     $previousCodexHome = $env:CODEX_HOME
     $hadCodexHome = Test-Path Env:CODEX_HOME
     $hadElectronRunAsNode = Test-Path Env:ELECTRON_RUN_AS_NODE
     $previousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+    $hadWslEnv = Test-Path Env:WSLENV
+    $previousWslEnv = $env:WSLENV
 
     $env:CODEX_HOME = $codexHome
     if ($hadElectronRunAsNode) {
       Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    }
+    if ($codexRunInWsl -and -not $config.useRemoteWsl) {
+      $wslEntries = @()
+      if ($hadWslEnv -and -not [string]::IsNullOrWhiteSpace($previousWslEnv)) {
+        $wslEntries = @($previousWslEnv -split ":" | Where-Object { $_ -and ($_ -notmatch "^CODEX_HOME(?:/.*)?$") })
+      }
+      $wslEntries += "CODEX_HOME/p"
+      $env:WSLENV = ($wslEntries -join ":")
+      Write-LauncherLog ("WSLENV={0}" -f $env:WSLENV)
     }
 
     try {
       $codeCommand = Get-Command code -ErrorAction SilentlyContinue
       if ($null -ne $codeCommand) {
         Write-LauncherLog ("Mode=Local CodeCommand={0}" -f $codeCommand.Source)
-        & code --new-window $launchTarget
+        if ($forceIsolatedCodeProcess -and -not [string]::IsNullOrWhiteSpace($userDataDir)) {
+          & code --new-window --user-data-dir $userDataDir $launchTarget
+        } else {
+          & code --new-window $launchTarget
+        }
       } else {
         $codeExe = Join-Path $env:LocalAppData "Programs\Microsoft VS Code\Code.exe"
         if (-not (Test-Path -LiteralPath $codeExe -PathType Leaf)) {
           Fail "VS Code executable not found. Install VS Code or add 'code' to PATH." 127
         }
         Write-LauncherLog ("Mode=Local CodeCommand={0}" -f $codeExe)
-        & $codeExe --new-window $launchTarget
+        if ($forceIsolatedCodeProcess -and -not [string]::IsNullOrWhiteSpace($userDataDir)) {
+          & $codeExe --new-window --user-data-dir $userDataDir $launchTarget
+        } else {
+          & $codeExe --new-window $launchTarget
+        }
       }
 
       if ($LASTEXITCODE -ne 0) {
@@ -775,6 +976,11 @@ code --new-window "`$target"
         $env:ELECTRON_RUN_AS_NODE = $previousElectronRunAsNode
       } else {
         Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+      }
+      if ($hadWslEnv) {
+        $env:WSLENV = $previousWslEnv
+      } else {
+        Remove-Item Env:WSLENV -ErrorAction SilentlyContinue
       }
     }
   }
@@ -1050,6 +1256,7 @@ $outputs = if ($platformIsWindows) {
     -WorkspaceRelativePath $workspaceRelativePath `
     -UseRemoteWsl $useRemoteWsl `
     -WslDistro $wslDistro `
+    -CodexRunInWsl $codexRunInWsl `
     -EnableLoggingByDefault $enableLoggingByDefault
 } else {
   New-UnixLauncherFile `

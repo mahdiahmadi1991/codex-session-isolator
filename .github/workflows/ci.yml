@@ -18,7 +18,6 @@ jobs:
         run: |
           $files = @(
             "launchers/CodexSessionIsolator.ps1",
-            "launchers/CodexWorkspaceLauncher.ps1",
             "tools/New-VscLauncherWizard.ps1"
           )
           foreach ($file in $files) {
