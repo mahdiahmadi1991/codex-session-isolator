@@ -126,7 +126,7 @@ The extension adds in-editor commands for wizard UX and launcher operations:
 
 Marketplace identifier:
 
-- `2ma.codex-project-isolator`
+- `2ma.codex-session-isolator`
 
 Development run:
 
@@ -205,3 +205,4 @@ Required repository secret:
 ## License
 
 MIT
+

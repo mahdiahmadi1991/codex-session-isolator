@@ -52,9 +52,9 @@ Expected value:
 
 ## Settings
 
-- `codexProjectIsolator.debugWizardByDefault`
-- `codexProjectIsolator.closeWindowAfterReopen`
-- `codexProjectIsolator.requireConfirmation`
+- `codexSessionIsolator.debugWizardByDefault`
+- `codexSessionIsolator.closeWindowAfterReopen`
+- `codexSessionIsolator.requireConfirmation`
 
 ## Security and Privacy
 
@@ -86,3 +86,4 @@ npm run compile
 ```
 
 Press `F5` in VS Code (from `extension` folder) to run Extension Development Host.
+
