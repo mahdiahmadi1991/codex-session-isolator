@@ -16,11 +16,18 @@ jobs:
       - name: Parse PowerShell script
         shell: pwsh
         run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("launchers/CodexSessionIsolator.ps1", [ref]$null, [ref]$errors) | Out-Null
-          if ($errors -and $errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+          $files = @(
+            "launchers/CodexSessionIsolator.ps1",
+            "launchers/CodexWorkspaceLauncher.ps1",
+            "tools/New-VscLauncherWizard.ps1"
+          )
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
+              exit 1
+            }
           }
 
       - name: Dry-run PowerShell launcher (folder + workspace)

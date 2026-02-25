@@ -2,6 +2,20 @@
 
 Run tests manually in your own environment.
 
+## 0) Wizard generation flow
+
+Command:
+
+```bat
+.\tools\new-vsc-launcher.bat "C:\path\to\repo"
+```
+
+Expected:
+
+- Wizard prompts for launch mode, WSL options, Codex WSL setting, session ignore, and logging.
+- It creates/replaces launcher files in target directory.
+- It updates managed `.gitignore` block.
+
 ## 1) Windows local workspace path
 
 Command:
