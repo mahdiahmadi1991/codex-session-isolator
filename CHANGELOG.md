@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-02-25
+
+### Added
+
+- Dependabot configuration for GitHub Actions updates.
+
 ## [0.2.0] - 2026-02-25
 
 ### Added
