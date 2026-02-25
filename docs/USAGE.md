@@ -45,6 +45,7 @@ Windows (batch entrypoint):
 ```bat
 .\tools\vsc-launcher.bat "C:\path\to\project"
 .\tools\vsc-launcher.bat "C:\path\to\project" --debug
+.\tools\vsc-launcher.bat "\\wsl$\Ubuntu-24.04\home\user\project"
 ```
 
 Windows (PowerShell helper):
@@ -93,6 +94,11 @@ Wizard behavior:
 - Uses folder target automatically when no workspace file exists.
 - Skips WSL-related questions automatically when WSL is unavailable.
 - Remembers previous answers and uses them as defaults for faster wizard runs.
+- First-run defaults on Windows (when WSL is available):
+  - `Launch VS Code in Remote WSL mode`: `Yes`
+  - `Set Codex to run in WSL for this project`: `Yes`
+  - WSL distro default: Windows default distro (`wsl --status`)
+  - `Ignore Codex chat sessions in gitignore`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
 - In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it.
@@ -120,6 +126,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\launchers\CodexSessionIsol
 ```bat
 .\launchers\codex-session-isolator.bat "<workspace-or-folder-path>" [--dry-run]
 ```
+
+### Windows launcher for WSL-hosted project
+
+Use a WSL UNC path as target:
+
+```bat
+.\tools\vsc-launcher.bat "\\wsl$\Ubuntu-24.04\home\user\my-app"
+```
+
+Recommended answers:
+
+1. `Launch VS Code in Remote WSL mode`: `Yes`
+2. `Set Codex to run in WSL for this project`: `Yes`
+
+If you force local Windows mode on a `\\wsl$\...` target, VS Code can show `Reopen Folder in WSL` guidance. That warning is expected.
 
 ## Linux/macOS
 

@@ -105,6 +105,11 @@ Wizard defaults:
 - It asks workspace selection only when more than one workspace file is found.
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
+- First-run defaults on Windows (when WSL is available) are:
+  - `Launch VS Code in Remote WSL mode = Yes`
+  - `Set Codex to run in WSL for this project = Yes`
+  - WSL distro default = your Windows default distro (`wsl --status`)
+  - `Ignore Codex chat sessions in gitignore = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
 - Wizard always writes:
@@ -151,6 +156,25 @@ Or with wrapper:
 .\launchers\codex-session-isolator.bat "C:\dev\my-app\MyApp.code-workspace"
 .\launchers\codex-session-isolator.bat "C:\dev\my-app"
 ```
+
+### Windows -> WSL project target
+
+If your project is inside WSL, pass a WSL UNC path:
+
+```bat
+.\tools\vsc-launcher.bat "\\wsl$\Ubuntu-24.04\home\user\my-app"
+```
+
+Recommended:
+
+1. Keep `Launch VS Code in Remote WSL mode` on `Yes` (default).
+2. Keep `Set Codex to run in WSL` on `Yes` (default).
+3. Reopen with generated `vsc_launcher.bat`.
+
+Note:
+
+- If you open `\\wsl$\...` in a local Windows window, VS Code may show the hint to reopen in WSL. This is expected.
+- Remote WSL mode avoids that mismatch and keeps terminal/extensions/Codex in Linux context.
 
 ### Linux/macOS
 
@@ -205,4 +229,3 @@ Required repository secret:
 ## License
 
 MIT
-

@@ -8,6 +8,13 @@ Automated CI coverage:
 - Linux: `tests/test-linux.sh`
 - macOS: `tests/test-linux.sh`
 
+Windows automated matrix now also validates a WSL UNC project target across four launcher modes:
+
+- VS Code local + Codex local
+- VS Code local + Codex Run in WSL
+- VS Code Remote WSL + Codex local flag
+- VS Code Remote WSL + Codex Run in WSL flag
+
 ## 0) Wizard generation flow
 
 Command:
