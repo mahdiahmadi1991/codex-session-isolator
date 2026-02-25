@@ -25,6 +25,7 @@ This isolates Codex state per project without changing global/default behavior.
 - Does not modify shell profiles or global Codex settings.
 - Keeps per-project Codex state isolated.
 - Supports both workspace files and plain folders (no workspace required).
+- Includes an interactive launcher wizard for generating project-specific launchers.
 
 ## Project Structure
 
@@ -36,6 +37,28 @@ This isolates Codex state per project without changing global/default behavior.
 - `docs/TESTING.md` - Manual test matrix.
 
 ## Quick Start
+
+### Generate a launcher (wizard)
+
+Windows:
+
+```bat
+.\tools\new-vsc-launcher.bat "C:\path\to\project"
+```
+
+PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+```
+
+The wizard asks for:
+
+- folder vs workspace launch target
+- Remote WSL mode and distro selection (when needed)
+- whether Codex should run in WSL for this project
+- whether `.codex/sessions` and `.codex/archived_sessions` should be git-ignored
+- optional logging default for the generated launcher
 
 ### Windows
 

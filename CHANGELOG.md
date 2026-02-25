@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-02-25
+
+### Added
+
+- Interactive launcher wizard:
+  - `tools/New-VscLauncherWizard.ps1`
+  - `tools/new-vsc-launcher.bat`
+- Wizard-driven generation of project-specific launchers from a target path.
+- Optional launcher logging support in generated launcher.
+
+### Changed
+
+- Documentation updated for wizard-first setup flow.
+- Git ignore handling now supports policy:
+  - always ignore sensitive `.codex` content
+  - optionally ignore or keep `.codex/sessions` and `.codex/archived_sessions`
+
 ## [0.2.1] - 2026-02-25
 
 ### Added

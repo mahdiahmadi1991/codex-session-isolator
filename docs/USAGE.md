@@ -13,6 +13,34 @@ For the launched VS Code session, it sets:
 
 Outside this launcher, your default Codex behavior remains unchanged.
 
+## Launcher wizard (recommended)
+
+Use the wizard to generate a project-specific launcher in your target folder.
+
+Windows (batch entrypoint):
+
+```bat
+.\tools\new-vsc-launcher.bat "C:\path\to\project"
+```
+
+PowerShell direct:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\New-VscLauncherWizard.ps1 -TargetPath "C:\path\to\project"
+```
+
+Wizard outputs (Windows):
+
+- `<target>\vsc_launcher.ps1`
+- `<target>\vsc_launcher.bat`
+- `<target>\vsc_launcher.config.json`
+
+Wizard behavior:
+
+- Replaces generated launcher files if they already exist.
+- Updates a managed `.gitignore` block in target folder.
+- Updates `.vscode/settings.json` for `chatgpt.runCodexInWindowsSubsystemForLinux`.
+
 ## Windows
 
 ### PowerShell launcher (recommended)
