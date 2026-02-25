@@ -34,7 +34,7 @@ All notable changes to this project are documented in this file.
 - Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
 - Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
 - Extension metadata and README content were enriched for Marketplace readiness.
-- Extension identifier namespace was refined to `codexProjectIsolator` and package id to `codex-project-isolator`.
+- Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
 - Marketplace hero image was regenerated at larger dimensions to prevent text clipping.
 - Wizard now creates safety backups before overwriting managed files under `.vsc_launcher/backups/<timestamp-pid>/`.
@@ -139,3 +139,4 @@ All notable changes to this project are documented in this file.
   - `launchers/codex-workspace-launcher.sh`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.
+

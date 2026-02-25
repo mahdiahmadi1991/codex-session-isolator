@@ -1,5 +1,5 @@
 {
-  "name": "codex-project-isolator",
+  "name": "codex-session-isolator",
   "displayName": "Codex Session Isolator",
   "description": "Workspace launcher assistant for isolated Codex sessions in VS Code.",
   "version": "0.1.0",
@@ -37,45 +37,45 @@
     "Machine Learning"
   ],
   "activationEvents": [
-    "onCommand:codexProjectIsolator.initialize",
-    "onCommand:codexProjectIsolator.reopenWithLauncher",
-    "onCommand:codexProjectIsolator.openLogs",
-    "onCommand:codexProjectIsolator.openConfig"
+    "onCommand:codexSessionIsolator.initialize",
+    "onCommand:codexSessionIsolator.reopenWithLauncher",
+    "onCommand:codexSessionIsolator.openLogs",
+    "onCommand:codexSessionIsolator.openConfig"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "codexProjectIsolator.initialize",
+        "command": "codexSessionIsolator.initialize",
         "title": "Codex Session Isolator: Initialize Launcher"
       },
       {
-        "command": "codexProjectIsolator.reopenWithLauncher",
+        "command": "codexSessionIsolator.reopenWithLauncher",
         "title": "Codex Session Isolator: Reopen With Launcher"
       },
       {
-        "command": "codexProjectIsolator.openLogs",
+        "command": "codexSessionIsolator.openLogs",
         "title": "Codex Session Isolator: Open Launcher Logs"
       },
       {
-        "command": "codexProjectIsolator.openConfig",
+        "command": "codexSessionIsolator.openConfig",
         "title": "Codex Session Isolator: Open Launcher Config"
       }
     ],
     "configuration": {
       "title": "Codex Session Isolator",
       "properties": {
-        "codexProjectIsolator.debugWizardByDefault": {
+        "codexSessionIsolator.debugWizardByDefault": {
           "type": "boolean",
           "default": false,
           "description": "Run launcher wizard in debug mode by default."
         },
-        "codexProjectIsolator.closeWindowAfterReopen": {
+        "codexSessionIsolator.closeWindowAfterReopen": {
           "type": "boolean",
           "default": true,
           "description": "Close current VS Code window after launching project launcher."
         },
-        "codexProjectIsolator.requireConfirmation": {
+        "codexSessionIsolator.requireConfirmation": {
           "type": "boolean",
           "default": true,
           "description": "Require explicit confirmation before initializing a launcher."
@@ -99,3 +99,4 @@
     "typescript": "^5.7.3"
   }
 }
+

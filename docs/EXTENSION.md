@@ -17,9 +17,9 @@ The extension provides a hybrid UX:
 
 ## Settings
 
-- `codexProjectIsolator.debugWizardByDefault` (default: `false`)
-- `codexProjectIsolator.closeWindowAfterReopen` (default: `true`)
-- `codexProjectIsolator.requireConfirmation` (default: `true`)
+- `codexSessionIsolator.debugWizardByDefault` (default: `false`)
+- `codexSessionIsolator.closeWindowAfterReopen` (default: `true`)
+- `codexSessionIsolator.requireConfirmation` (default: `true`)
 
 ## Development
 
@@ -44,3 +44,4 @@ Run Extension Development Host:
 - Wizard creates backups before overwriting managed files under `.vsc_launcher/backups/`.
 - Because launcher sessions use project-local `.codex`, chat/session visibility is isolated per project.
 - Separate projects can keep separate account/API-key context.
+

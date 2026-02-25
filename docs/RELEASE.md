@@ -32,7 +32,7 @@ Security checks:
 ## 2.1) Extension marketplace checks
 
 - Confirm `extension/package.json` version is set for target stable release.
-- Confirm extension id is `2ma.codex-project-isolator`.
+- Confirm extension id is `2ma.codex-session-isolator`.
 - Confirm repository secret `VSCE_PAT` is configured.
 - Confirm branch model is followed:
   - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.
@@ -65,3 +65,4 @@ git push origin vX.Y.Z
 - Stable: publishing is automatic on `release.published` via `.github/workflows/extension-publish.yml`.
 - Manual: run workflow `Extension Publish` (`workflow_dispatch`) and choose `stable` or `pre-release`.
 - Workflow also produces VSIX checksum (`*.vsix.sha256`); publish these files with stable release assets.
+

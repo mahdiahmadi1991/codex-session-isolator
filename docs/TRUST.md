@@ -35,7 +35,7 @@ This allows manual rollback when needed.
 - Extension actions require VS Code trusted workspace.
 - Initialization prompts an explicit confirmation by default.
 - Confirmation behavior can be controlled with:
-  - `codexProjectIsolator.requireConfirmation`
+  - `codexSessionIsolator.requireConfirmation`
 
 ## CI security controls
 
@@ -56,3 +56,4 @@ Marketplace publish workflow generates:
 - SHA-256 checksum (`.vsix.sha256`)
 
 For stable releases, these are attached as release assets for independent verification.
+

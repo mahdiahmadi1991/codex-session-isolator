@@ -16,12 +16,17 @@ type ProcessResult = {
   stderr: string;
 };
 
-const EXTENSION_NAMESPACE = "codexProjectIsolator";
+const EXTENSION_NAMESPACE = "codexSessionIsolator";
+const LEGACY_NAMESPACE = "codexProjectIsolator";
+
 const CMD_INITIALIZE = `${EXTENSION_NAMESPACE}.initialize`;
 const CMD_REOPEN = `${EXTENSION_NAMESPACE}.reopenWithLauncher`;
 const CMD_OPEN_LOGS = `${EXTENSION_NAMESPACE}.openLogs`;
 const CMD_OPEN_CONFIG = `${EXTENSION_NAMESPACE}.openConfig`;
-const LEGACY_NAMESPACE = "codexSessionIsolator";
+const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
+const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
+const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
+const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
 
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
@@ -41,41 +46,41 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Codex Session Isolator");
   context.subscriptions.push(output);
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_INITIALIZE, async () => {
-      await initializeLauncher(context, output);
-    })
-  );
+  const initializeHandler = async () => {
+    await initializeLauncher(context, output);
+  };
+  const reopenHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await reopenWithLauncher(root);
+  };
+  const openLogsHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await openLogsFolder(root);
+  };
+  const openConfigHandler = async () => {
+    const root = await pickTargetRoot();
+    if (!root) {
+      return;
+    }
+    await openConfigFile(root);
+  };
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_REOPEN, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await reopenWithLauncher(root);
-    })
-  );
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_REOPEN, reopenHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_LOGS, openLogsHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_CONFIG, openConfigHandler));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_OPEN_LOGS, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await openLogsFolder(root);
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_OPEN_CONFIG, async () => {
-      const root = await pickTargetRoot();
-      if (!root) {
-        return;
-      }
-      await openConfigFile(root);
-    })
-  );
+  // Keep legacy command IDs active so older keybindings/tasks still work after renaming.
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_REOPEN, reopenHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_LOGS, openLogsHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_CONFIG, openConfigHandler));
 }
 
 export function deactivate(): void {}
