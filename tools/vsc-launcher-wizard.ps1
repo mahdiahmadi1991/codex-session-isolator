@@ -228,8 +228,8 @@ function Get-RelativePathSafe {
     [string]$TargetPath
   )
 
-  $baseResolved = (Resolve-Path -LiteralPath $BasePath).Path
-  $targetResolved = (Resolve-Path -LiteralPath $TargetPath).Path
+  $baseResolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $BasePath -Force).FullName)
+  $targetResolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $TargetPath -Force).FullName)
 
   $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
   if ($null -ne $method) {

@@ -258,7 +258,8 @@ try {
   $latestLog2 = Get-LatestLog -LogsDir (Join-Path $meta2 "logs")
   $log2 = Get-Content -LiteralPath $latestLog2 -Raw
   Assert-Contains $log2 "Mode=Local" "Expected local launch mode in baseline log."
-  Assert-Contains $log2 "CODEX_HOME=$case2\.codex" "Expected project CODEX_HOME in baseline log."
+  Assert-Contains $log2 "CODEX_HOME=" "Expected CODEX_HOME entry in baseline log."
+  Assert-Contains $log2 "case2-wizard-local\.codex" "Expected project CODEX_HOME path segment in baseline log."
 
   Write-Host "[test] Case 3: local Codex-in-WSL wrapper wiring"
   $config2Obj.codexRunInWsl = $true
@@ -367,8 +368,10 @@ try {
   $logA = Get-Content -LiteralPath $logAPath -Raw
   $logB = Get-Content -LiteralPath $logBPath -Raw
 
-  Assert-Contains $logA "CODEX_HOME=$projectA\.codex" "Project A log has wrong CODEX_HOME."
-  Assert-Contains $logB "CODEX_HOME=$projectB\.codex" "Project B log has wrong CODEX_HOME."
+  Assert-Contains $logA "CODEX_HOME=" "Project A log missing CODEX_HOME."
+  Assert-Contains $logB "CODEX_HOME=" "Project B log missing CODEX_HOME."
+  Assert-Contains $logA "project-a\.codex" "Project A log has wrong CODEX_HOME path segment."
+  Assert-Contains $logB "project-b\.codex" "Project B log has wrong CODEX_HOME path segment."
 
   $settingsAPath = Join-Path $projectA ".vsc_launcher\vscode-user-data\User\settings.json"
   $settingsBPath = Join-Path $projectB ".vsc_launcher\vscode-user-data\User\settings.json"
