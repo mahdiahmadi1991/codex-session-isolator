@@ -33,6 +33,10 @@ All notable changes to this project are documented in this file.
 - Managed `.gitignore` launcher block now ignores both `vsc_launcher.bat` and `vsc_launcher.sh` for cross-platform generated launcher artifacts.
 - Hidden-dot path handling was hardened for WSL-hosted wizard runs on Windows-mounted paths (`/mnt/<drive>/...`) so generated project folders keep Windows hidden attributes consistently.
 - Windows tests now verify bundled extension wizard parity (content sync + hidden-dot paths on generated folders).
+- Wizard relative-path handling now supports WSL UNC targets (`\\wsl$\\...`) in Windows PowerShell without URI parsing failures.
+- Generated Windows runner now handles WSL UNC path-to-Linux conversion when `codexRunInWsl=true` and target root is inside WSL.
+- Windows tests now include an end-to-end WSL UNC target matrix that covers all four mode combinations (local/remote VS Code x Codex run-in-WSL on/off), auto-skipped when WSL is unavailable.
+- Wizard/extension first-run defaults on Windows+WSL are now aligned for faster setup: Remote WSL `Yes`, Codex-in-WSL `Yes`, distro defaults to Windows default distro, and `Ignore Codex chat sessions` defaults to `No`.
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
@@ -139,4 +143,3 @@ All notable changes to this project are documented in this file.
   - `launchers/codex-workspace-launcher.sh`
 - Workspace-isolated `CODEX_HOME` behavior (`<workspace-dir>/.codex`).
 - Usage and testing documentation.
-

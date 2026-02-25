@@ -231,27 +231,64 @@ function Get-RelativePathSafe {
     [string]$TargetPath
   )
 
-  $baseResolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $BasePath -Force).FullName)
-  $targetResolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $TargetPath -Force).FullName)
+  $baseResolvedInfo = Resolve-Path -LiteralPath $BasePath -ErrorAction Stop | Select-Object -First 1
+  $targetResolvedInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | Select-Object -First 1
+  $baseResolved = [IO.Path]::GetFullPath($baseResolvedInfo.ProviderPath)
+  $targetResolved = [IO.Path]::GetFullPath($targetResolvedInfo.ProviderPath)
 
   $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
   if ($null -ne $method) {
     return [IO.Path]::GetRelativePath($baseResolved, $targetResolved)
   }
 
-  $separator = [IO.Path]::DirectorySeparatorChar
-  $baseWithSlash = $baseResolved.TrimEnd('\', '/') + $separator
+  $comparison = if ($env:OS -eq "Windows_NT") {
+    [StringComparison]::OrdinalIgnoreCase
+  } else {
+    [StringComparison]::Ordinal
+  }
 
-  $baseUri = [Uri]$baseWithSlash
-  $targetUri = [Uri]$targetResolved
-  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
-  $relative = [Uri]::UnescapeDataString($relativeUri.ToString()).Replace('/', $separator)
+  $baseRoot = [IO.Path]::GetPathRoot($baseResolved)
+  $targetRoot = [IO.Path]::GetPathRoot($targetResolved)
+  if ([string]::IsNullOrWhiteSpace($baseRoot) -or [string]::IsNullOrWhiteSpace($targetRoot)) {
+    return $targetResolved
+  }
 
-  if ([string]::IsNullOrWhiteSpace($relative)) {
+  if (-not $baseRoot.Equals($targetRoot, $comparison)) {
+    return $targetResolved
+  }
+
+  $baseRemainder = $baseResolved.Substring($baseRoot.Length).Trim('\', '/')
+  $targetRemainder = $targetResolved.Substring($targetRoot.Length).Trim('\', '/')
+
+  $baseSegments = @()
+  if (-not [string]::IsNullOrWhiteSpace($baseRemainder)) {
+    $baseSegments = @($baseRemainder -split '[\\/]' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  }
+
+  $targetSegments = @()
+  if (-not [string]::IsNullOrWhiteSpace($targetRemainder)) {
+    $targetSegments = @($targetRemainder -split '[\\/]' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  }
+
+  $commonLength = 0
+  $maxLength = [Math]::Min($baseSegments.Count, $targetSegments.Count)
+  while ($commonLength -lt $maxLength -and $baseSegments[$commonLength].Equals($targetSegments[$commonLength], $comparison)) {
+    $commonLength++
+  }
+
+  $relativeSegments = New-Object System.Collections.Generic.List[string]
+  for ($i = $commonLength; $i -lt $baseSegments.Count; $i++) {
+    $relativeSegments.Add("..")
+  }
+  for ($i = $commonLength; $i -lt $targetSegments.Count; $i++) {
+    $relativeSegments.Add($targetSegments[$i])
+  }
+
+  if ($relativeSegments.Count -eq 0) {
     return "."
   }
 
-  return $relative
+  return [string]::Join([IO.Path]::DirectorySeparatorChar, $relativeSegments)
 }
 
 function Ensure-JsonObjectFile {
@@ -782,10 +819,11 @@ function Convert-WindowsPathToLinuxPath {
 
   if ($InputPath -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]([^\\]+)[\\](.*)$') {
     $distroInPath = $Matches[1]
-    if ($distroInPath -ieq $Distro) {
+    if ([string]::IsNullOrWhiteSpace($Distro) -or $distroInPath -ieq $Distro) {
       $rest = $Matches[2] -replace '\\', '/'
       return "/$rest"
     }
+    throw "WSL path '$InputPath' belongs to distro '$distroInPath', but launcher is configured for distro '$Distro'."
   }
 
   if ($InputPath -match '^/') {
@@ -802,10 +840,17 @@ function Convert-WindowsPathToLinuxPath {
   }
 
   $normalized = $InputPath -replace '\\', '/'
-  $convertedRaw = & wsl.exe -d $Distro -- wslpath -a -u $normalized 2>&1
+  $wslArgs = @()
+  if ([string]::IsNullOrWhiteSpace($Distro)) {
+    $wslArgs = @("--", "wslpath", "-a", "-u", $normalized)
+  } else {
+    $wslArgs = @("-d", $Distro, "--", "wslpath", "-a", "-u", $normalized)
+  }
+  $convertedRaw = & wsl.exe @wslArgs 2>&1
   $converted = ($convertedRaw | Out-String).Trim()
+  $distroLabel = if ([string]::IsNullOrWhiteSpace($Distro)) { "<default>" } else { $Distro }
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
-    throw "Failed to convert path '$InputPath' to Linux path in distro '$Distro'. wslpath: $converted"
+    throw "Failed to convert path '$InputPath' to Linux path in distro '$distroLabel'. wslpath: $converted"
   }
   return $converted
 }
@@ -1346,7 +1391,8 @@ if (-not (Test-Path -LiteralPath $TargetPath -PathType Any)) {
   throw "Path not found: $TargetPath"
 }
 
-$resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
+$resolvedTargetInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | Select-Object -First 1
+$resolvedTarget = [IO.Path]::GetFullPath($resolvedTargetInfo.ProviderPath)
 $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
 $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Path -Parent $resolvedTarget }
 Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
@@ -1398,7 +1444,7 @@ $wslDistro = ""
 $wslAvailable = $platformIsWindows -and (Test-WslAvailable)
 
 if ($platformIsWindows -and $wslAvailable) {
-  $remoteDefault = if ($null -ne $wizardDefaults.useRemoteWsl) { [bool]$wizardDefaults.useRemoteWsl } else { $false }
+  $remoteDefault = if ($null -ne $wizardDefaults.useRemoteWsl) { [bool]$wizardDefaults.useRemoteWsl } else { $true }
   $useRemoteWsl = Read-YesNo -Prompt "Launch VS Code in Remote WSL mode?" -DefaultValue $remoteDefault
   Write-Info ("Remote WSL launch: {0}" -f ($(if ($useRemoteWsl) { "enabled" } else { "disabled" })))
   if ($useRemoteWsl) {
@@ -1410,7 +1456,18 @@ if ($platformIsWindows -and $wslAvailable) {
       $wslDistro = $distros[0]
       Write-Info ("Using WSL distro (single detected): {0}" -f $wslDistro)
     } else {
-      $idx = Read-ChoiceIndex -Title "Select WSL distro:" -Options $distros -DefaultIndex 0
+      $defaultDistro = Get-DefaultWslDistro
+      $defaultIndex = 0
+      if (-not [string]::IsNullOrWhiteSpace($defaultDistro)) {
+        for ($i = 0; $i -lt $distros.Count; $i++) {
+          if ($distros[$i] -ieq $defaultDistro) {
+            $defaultIndex = $i
+            break
+          }
+        }
+      }
+      Write-Info ("WSL distro default selection: {0}" -f $distros[$defaultIndex])
+      $idx = Read-ChoiceIndex -Title "Select WSL distro:" -Options $distros -DefaultIndex $defaultIndex
       $wslDistro = $distros[$idx]
       Write-Info ("Using WSL distro: {0}" -f $wslDistro)
     }
@@ -1420,7 +1477,7 @@ if ($platformIsWindows -and $wslAvailable) {
 }
 
 $codexRunInWsl = if ($platformIsWindows -and $wslAvailable) {
-  $codexDefault = if ($null -ne $wizardDefaults.codexRunInWsl) { [bool]$wizardDefaults.codexRunInWsl } else { $useRemoteWsl }
+  $codexDefault = if ($null -ne $wizardDefaults.codexRunInWsl) { [bool]$wizardDefaults.codexRunInWsl } else { $true }
   Read-YesNo -Prompt "Set Codex to run in WSL for this project?" -DefaultValue $codexDefault
 } else {
   $false
@@ -1431,7 +1488,7 @@ if ($codexRunInWsl -and -not $useRemoteWsl) {
   Write-Info "Codex-in-WSL is enabled while VS Code launch mode is local Windows."
 }
 
-$ignoreDefault = if ($null -ne $wizardDefaults.ignoreSessions) { [bool]$wizardDefaults.ignoreSessions } else { $true }
+$ignoreDefault = if ($null -ne $wizardDefaults.ignoreSessions) { [bool]$wizardDefaults.ignoreSessions } else { $false }
 $ignoreSessions = Read-YesNo -Prompt "Ignore Codex chat sessions in gitignore?" -DefaultValue $ignoreDefault
 Write-Info ("Launcher logging default: {0}" -f ($(if ($enableLoggingByDefault) { "enabled (debug mode)" } else { "disabled" })))
 
