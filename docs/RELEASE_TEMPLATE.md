@@ -41,6 +41,7 @@ Use this template when creating a stable GitHub Release (`vX.Y.Z`).
 ## Marketplace
 
 - [ ] Extension version in `extension/package.json` matches tag (`vX.Y.Z`)
+- [ ] Stable release is non-preview (`preview` omitted or `false` in `extension/package.json`)
 - [ ] GitHub Release tag created and published
 - [ ] Stable publish workflow completed successfully
 - [ ] VSIX and checksum attached to release assets
@@ -52,4 +53,3 @@ Use this template when creating a stable GitHub Release (`vX.Y.Z`).
 ## Known Issues (if any)
 
 - 
-

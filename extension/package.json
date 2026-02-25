@@ -2,11 +2,10 @@
   "name": "codex-session-isolator",
   "displayName": "Codex Session Isolator",
   "description": "Workspace launcher assistant for isolated Codex sessions in VS Code.",
-  "version": "0.1.0",
+  "version": "0.3.3",
   "publisher": "2ma",
   "license": "MIT",
   "icon": "media/icon.png",
-  "preview": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/mahdiahmadi1991/codex-session-isolator.git"
