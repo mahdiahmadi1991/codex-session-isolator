@@ -30,14 +30,21 @@ type WizardRunResult = {
   message?: string;
 };
 
+type InitializeFlowOptions = {
+  reopenAfterInitialize: boolean;
+  showPostInitializeActions: boolean;
+};
+
 const EXTENSION_NAMESPACE = "codexSessionIsolator";
 const LEGACY_NAMESPACE = "codexProjectIsolator";
 
 const CMD_INITIALIZE = `${EXTENSION_NAMESPACE}.initialize`;
+const CMD_SETUP = `${EXTENSION_NAMESPACE}.setup`;
 const CMD_REOPEN = `${EXTENSION_NAMESPACE}.reopenWithLauncher`;
 const CMD_OPEN_LOGS = `${EXTENSION_NAMESPACE}.openLogs`;
 const CMD_OPEN_CONFIG = `${EXTENSION_NAMESPACE}.openConfig`;
 const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
+const LEGACY_CMD_SETUP = `${LEGACY_NAMESPACE}.setup`;
 const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
 const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
 const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
@@ -62,14 +69,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
 
   const initializeHandler = async () => {
-    await initializeLauncher(context, output);
+    await initializeLauncherCommand(context, output);
+  };
+  const setupHandler = async () => {
+    await setupLauncherCommand(context, output);
   };
   const reopenHandler = async () => {
     const root = await pickTargetRoot();
     if (!root) {
       return;
     }
-    await reopenWithLauncher(root);
+    await reopenWithLauncher(context, output, root, true);
   };
   const openLogsHandler = async () => {
     const root = await pickTargetRoot();
@@ -87,12 +97,14 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(vscode.commands.registerCommand(CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_SETUP, setupHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_REOPEN, reopenHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_LOGS, openLogsHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_CONFIG, openConfigHandler));
 
   // Keep legacy command IDs active so older keybindings/tasks still work after renaming.
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_SETUP, setupHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_REOPEN, reopenHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_LOGS, openLogsHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_CONFIG, openConfigHandler));
@@ -100,32 +112,64 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-async function initializeLauncher(
+async function initializeLauncherCommand(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
 ): Promise<void> {
-  if (!(await ensureWorkspaceTrusted())) {
-    return;
-  }
-
   const targetRoot = await pickTargetRoot();
   if (!targetRoot) {
     return;
   }
 
-  if (!(await confirmLauncherChanges(targetRoot))) {
+  await initializeLauncherForTarget(
+    context,
+    output,
+    targetRoot,
+    { reopenAfterInitialize: false, showPostInitializeActions: true }
+  );
+}
+
+async function setupLauncherCommand(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot?: string
+): Promise<void> {
+  const resolvedTargetRoot = targetRoot ?? await pickTargetRoot();
+  if (!resolvedTargetRoot) {
     return;
+  }
+
+  await initializeLauncherForTarget(
+    context,
+    output,
+    resolvedTargetRoot,
+    { reopenAfterInitialize: true, showPostInitializeActions: false }
+  );
+}
+
+async function initializeLauncherForTarget(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  options: InitializeFlowOptions
+): Promise<boolean> {
+  if (!(await ensureWorkspaceTrusted())) {
+    return false;
+  }
+
+  if (!(await confirmLauncherChanges(targetRoot))) {
+    return false;
   }
 
   const scriptPath = context.asAbsolutePath(path.join("scripts", "vsc-launcher-wizard.ps1"));
   if (!existsSync(scriptPath)) {
     void vscode.window.showErrorMessage(`Bundled wizard script not found: ${scriptPath}`);
-    return;
+    return false;
   }
 
   const responses = await buildWizardResponses(targetRoot);
   if (!responses) {
-    return;
+    return false;
   }
 
   const psCommand = await detectPowerShellCommand();
@@ -133,7 +177,7 @@ async function initializeLauncher(
     void vscode.window.showErrorMessage(
       "PowerShell was not found. Install powershell/pwsh to run the launcher wizard."
     );
-    return;
+    return false;
   }
 
   const debugMode = getBooleanSetting("debugWizardByDefault", false);
@@ -146,42 +190,65 @@ async function initializeLauncher(
   output.show(true);
   output.appendLine(`[extension] Running wizard for: ${targetRoot}`);
 
-  const runResult = await runWizardProcess(psCommand, args, responses, targetRoot, output);
+  const runResult = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Codex Session Isolator: Initializing launcher",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Running launcher wizard..." });
+      return runWizardProcess(psCommand, args, responses, targetRoot, output);
+    }
+  );
   if (runResult.failureKind === "timeout") {
     void vscode.window.showErrorMessage(
       "Launcher wizard timed out after 120 seconds. Check 'Codex Session Isolator' output logs for details."
     );
-    return;
+    return false;
   }
 
   if (runResult.failureKind === "unknownPrompt") {
     void vscode.window.showErrorMessage(
       "Launcher wizard stopped on an unknown prompt to avoid hanging. Check 'Codex Session Isolator' output logs."
     );
-    return;
+    return false;
   }
 
   if (runResult.exitCode !== 0) {
     void vscode.window.showErrorMessage(
       "Launcher wizard failed. See 'Codex Session Isolator' output channel for details."
     );
-    return;
+    return false;
   }
 
-  const action = await vscode.window.showInformationMessage(
-    "Launcher generated successfully.",
-    "Reopen With Launcher",
-    "Open Logs",
-    "Open Config"
-  );
-
-  if (action === "Reopen With Launcher") {
-    await reopenWithLauncher(targetRoot);
-  } else if (action === "Open Logs") {
-    await openLogsFolder(targetRoot);
-  } else if (action === "Open Config") {
-    await openConfigFile(targetRoot);
+  if (options.reopenAfterInitialize) {
+    void vscode.window.showInformationMessage("Launcher setup complete. Reopening with launcher...");
+    const reopened = await reopenWithLauncher(context, output, targetRoot, false);
+    if (!reopened) {
+      return false;
+    }
+    return true;
   }
+
+  if (options.showPostInitializeActions) {
+    const action = await vscode.window.showInformationMessage(
+      "Launcher generated successfully.",
+      "Reopen With Launcher",
+      "Open Logs",
+      "Open Config"
+    );
+
+    if (action === "Reopen With Launcher") {
+      await reopenWithLauncher(context, output, targetRoot, false);
+    } else if (action === "Open Logs") {
+      await openLogsFolder(targetRoot);
+    } else if (action === "Open Config") {
+      await openConfigFile(targetRoot);
+    }
+  }
+
+  return true;
 }
 
 async function runWizardProcess(
@@ -567,9 +634,14 @@ async function openConfigFile(targetRoot: string): Promise<void> {
   await vscode.window.showTextDocument(doc, { preview: false });
 }
 
-async function reopenWithLauncher(targetRoot: string): Promise<void> {
+async function reopenWithLauncher(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  allowSetupWhenMissing: boolean
+): Promise<boolean> {
   if (!(await ensureWorkspaceTrusted())) {
-    return;
+    return false;
   }
 
   const launcherPath = process.platform === "win32"
@@ -577,37 +649,71 @@ async function reopenWithLauncher(targetRoot: string): Promise<void> {
     : path.join(targetRoot, "vsc_launcher.sh");
 
   if (!existsSync(launcherPath)) {
+    if (!allowSetupWhenMissing) {
+      void vscode.window.showWarningMessage("Launcher file not found in target root.");
+      return false;
+    }
+
     const action = await vscode.window.showWarningMessage(
       "Launcher file not found in target root.",
-      "Initialize Launcher"
+      "Initialize only",
+      "Initialize & Reopen",
+      "Cancel"
     );
-    if (action === "Initialize Launcher") {
-      await vscode.commands.executeCommand(CMD_INITIALIZE);
+
+    if (action === "Initialize only") {
+      await initializeLauncherForTarget(
+        context,
+        output,
+        targetRoot,
+        { reopenAfterInitialize: false, showPostInitializeActions: true }
+      );
+      return false;
     }
-    return;
+
+    if (action === "Initialize & Reopen") {
+      await setupLauncherCommand(context, output, targetRoot);
+      return false;
+    }
+
+    return false;
   }
 
-  if (process.platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", launcherPath], {
-      cwd: targetRoot,
-      detached: true,
-      stdio: "ignore"
-    });
-    child.unref();
-  } else {
-    await runCommand("chmod", ["+x", launcherPath]);
-    const child = spawn("bash", [launcherPath], {
-      cwd: targetRoot,
-      detached: true,
-      stdio: "ignore"
-    });
-    child.unref();
-  }
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Codex Session Isolator: Reopen With Launcher",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Starting launcher..." });
+      if (process.platform === "win32") {
+        const child = spawn("cmd.exe", ["/c", launcherPath], {
+          cwd: targetRoot,
+          detached: true,
+          stdio: "ignore"
+        });
+        child.unref();
+      } else {
+        await runCommand("chmod", ["+x", launcherPath]);
+        const child = spawn("bash", [launcherPath], {
+          cwd: targetRoot,
+          detached: true,
+          stdio: "ignore"
+        });
+        child.unref();
+      }
+    }
+  );
 
   const shouldClose = getBooleanSetting("closeWindowAfterReopen", true);
   if (shouldClose) {
     await vscode.commands.executeCommand("workbench.action.closeWindow");
+  } else {
+    void vscode.window.showInformationMessage("Launcher started successfully.");
   }
+
+  return true;
 }
 
 async function ensureWorkspaceTrusted(): Promise<boolean> {

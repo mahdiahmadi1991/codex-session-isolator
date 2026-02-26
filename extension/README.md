@@ -25,6 +25,7 @@ When launched through generated launcher:
 
 ## Commands
 
+- `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
@@ -33,12 +34,17 @@ When launched through generated launcher:
 ## Quick Start
 
 1. Open your project folder/workspace in VS Code.
-2. Run `Codex Session Isolator: Initialize Launcher`.
+2. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
 3. Answer wizard questions.
-4. Run `Codex Session Isolator: Reopen With Launcher`.
+4. VS Code reopens through the generated launcher automatically.
 5. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
+
+Manual flow is still available:
+
+1. `Codex Session Isolator: Initialize Launcher`
+2. `Codex Session Isolator: Reopen With Launcher`
 
 Expected value:
 

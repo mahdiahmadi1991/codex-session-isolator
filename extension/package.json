@@ -37,10 +37,12 @@
   ],
   "activationEvents": [
     "onCommand:codexSessionIsolator.initialize",
+    "onCommand:codexSessionIsolator.setup",
     "onCommand:codexSessionIsolator.reopenWithLauncher",
     "onCommand:codexSessionIsolator.openLogs",
     "onCommand:codexSessionIsolator.openConfig",
     "onCommand:codexProjectIsolator.initialize",
+    "onCommand:codexProjectIsolator.setup",
     "onCommand:codexProjectIsolator.reopenWithLauncher",
     "onCommand:codexProjectIsolator.openLogs",
     "onCommand:codexProjectIsolator.openConfig"
@@ -51,6 +53,10 @@
       {
         "command": "codexSessionIsolator.initialize",
         "title": "Codex Session Isolator: Initialize Launcher"
+      },
+      {
+        "command": "codexSessionIsolator.setup",
+        "title": "Codex Session Isolator: Setup (Initialize & Reopen)"
       },
       {
         "command": "codexSessionIsolator.reopenWithLauncher",
@@ -67,6 +73,10 @@
       {
         "command": "codexProjectIsolator.initialize",
         "title": "Codex Session Isolator (Legacy): Initialize Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.setup",
+        "title": "Codex Session Isolator (Legacy): Setup (Initialize & Reopen)"
       },
       {
         "command": "codexProjectIsolator.reopenWithLauncher",
@@ -89,6 +99,10 @@
         },
         {
           "command": "codexProjectIsolator.reopenWithLauncher",
+          "when": "false"
+        },
+        {
+          "command": "codexProjectIsolator.setup",
           "when": "false"
         },
         {

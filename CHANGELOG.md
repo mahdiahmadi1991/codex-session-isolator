@@ -47,6 +47,7 @@ All notable changes to this project are documented in this file.
 - Extension publish workflow now auto-publishes stable builds on pushes to `main` while preserving pre-release publish on `pre-release`.
 - Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
 - Extension wizard execution is now prompt-driven with unknown-prompt fail-fast behavior, structured per-prompt answer logs, and a hard 120-second timeout to prevent indefinite hangs.
+- Extension now includes a one-click setup command (`Setup (Initialize & Reopen)`), progress notifications for initialize/reopen operations, and improved Reopen missing-launcher options (`Initialize only`, `Initialize & Reopen`, `Cancel`).
 
 ## [0.3.2] - 2026-02-25
 

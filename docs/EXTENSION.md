@@ -10,10 +10,17 @@ The extension provides a hybrid UX:
 
 ## Commands
 
+- `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
+
+Recommended fresh-project flow:
+
+1. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+2. Complete wizard prompts.
+3. VS Code reopens automatically with generated launcher.
 
 ## Settings
 

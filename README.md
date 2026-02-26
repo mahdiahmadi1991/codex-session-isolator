@@ -125,10 +125,17 @@ Wizard defaults:
 
 The extension adds in-editor commands for wizard UX and launcher operations:
 
+- `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
+
+Recommended one-click onboarding for a fresh project:
+
+1. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+2. Complete wizard prompts.
+3. VS Code reopens via generated launcher automatically.
 
 Marketplace identifier:
 
