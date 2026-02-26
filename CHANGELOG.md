@@ -17,7 +17,7 @@ All notable changes to this project are documented in this file.
 - Extension documentation: `docs/EXTENSION.md`.
 - Marketplace preparation guide: `docs/MARKETPLACE.md`.
 - Extension Marketplace assets: `extension/media/icon.png` and `extension/media/hero.png`.
-- Marketplace publish automation workflow: `.github/workflows/extension-publish.yml` (release/manual plus optional auto pre-release on `main`).
+- Marketplace publish automation workflow: `.github/workflows/extension-publish.yml` (release/manual plus branch-driven publish paths).
 - Extension build/package flow now auto-syncs bundled wizard from `tools/vsc-launcher-wizard.ps1` via `extension/scripts/sync-wizard.mjs`.
 - Privacy notice: `PRIVACY.md`.
 - Trust and safety model guide: `docs/TRUST.md`.
@@ -40,6 +40,8 @@ All notable changes to this project are documented in this file.
 - Extension versioning policy now requires stable git tags to match `extension/package.json` (`v<version>`).
 - Stable manual publish flow now requires `ref=main` and explicit `release_tag` matching extension version.
 - Extension manifest is now non-preview for stable release discipline.
+- Extension publish workflow now auto-publishes stable builds on pushes to `main` while preserving pre-release publish on `pre-release`.
+- Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
 
 ## [0.3.2] - 2026-02-25
 
