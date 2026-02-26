@@ -18,7 +18,7 @@ on:
         required: false
         type: string
   push:
-    branches: ["pre-release"]
+    branches: ["pre-release", "main"]
 
 concurrency:
   group: extension-publish-${{ github.ref }}
@@ -31,7 +31,7 @@ jobs:
     if: |
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref_name == 'pre-release')
+      (github.event_name == 'push' && (github.ref_name == 'pre-release' || github.ref_name == 'main'))
     permissions:
       contents: write
     steps:
@@ -62,6 +62,8 @@ jobs:
             channel="stable"
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             channel="${{ github.event.inputs.channel }}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" == "main" ]]; then
+            channel="stable"
           fi
           echo "channel=${channel}" >> "$GITHUB_OUTPUT"
 

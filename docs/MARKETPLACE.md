@@ -73,6 +73,7 @@ Workflow file:
 
 Supported triggers:
 
+- `push` to `main` -> auto stable publish
 - `release.published` -> stable publish
 - `workflow_dispatch` -> manual publish (`pre-release` or `stable`)
 - `push` to `pre-release` -> auto pre-release publish

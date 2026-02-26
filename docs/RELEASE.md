@@ -61,6 +61,8 @@ git push origin vX.Y.Z
 ## 6) Marketplace publish paths
 
 - Pre-release: automatic on every push/merge to `pre-release`.
-- Stable: publishing is automatic on `release.published` via `.github/workflows/extension-publish.yml`.
+- Stable: publishing is automatic on every push/merge to `main`.
+- Stable: publishing is also triggered on `release.published` via `.github/workflows/extension-publish.yml`.
 - Manual: run workflow `Extension Publish` (`workflow_dispatch`) and choose `stable` or `pre-release`.
-- Workflow also produces VSIX checksum (`*.vsix.sha256`); publish these files with stable release assets.
+- For manual stable publish, run on `main` and provide `release_tag=v<extension.version>`.
+- Workflow produces VSIX checksum (`*.vsix.sha256`). On `release.published`, these are attached as release assets.
