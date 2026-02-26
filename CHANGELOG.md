@@ -26,6 +26,10 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - README and usage docs now include extension-based workflow.
+- Wizard now falls back to current directory when a WSL UNC target (`\\wsl$\...`) is passed on a host without WSL, generating local launcher settings instead of aborting before file generation.
+- Windows integration tests now include a no-WSL WSL-UNC fallback regression scenario.
+- Extension launcher initialization confirmation now uses an informational modal message with calmer wording (instead of a warning-style prompt).
+- Wizard now auto-creates `<project-name>.code-workspace` when no workspace file exists and uses it as launch target.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Extension metadata and README content were enriched for Marketplace readiness.

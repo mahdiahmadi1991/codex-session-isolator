@@ -26,7 +26,7 @@ Command:
 Expected:
 
 - If target has one workspace file, no workspace prompt is shown and workspace is selected automatically.
-- If target has no workspace file, folder target is selected automatically.
+- If target has no workspace file, wizard creates `<project-name>.code-workspace` and selects it automatically.
 - If target has multiple workspace files, wizard asks to select one.
 - If WSL is available, wizard prompts for WSL options and Codex WSL setting.
 - Wizard always prompts for session ignore policy.
@@ -47,6 +47,7 @@ Expected:
 - Wizard prints that WSL is not detected.
 - WSL-related questions are skipped.
 - `chatgpt.runCodexInWindowsSubsystemForLinux` is written as `false`.
+- If target is a WSL UNC path (`\\wsl$\...`), wizard falls back to current directory and still generates local launcher artifacts.
 
 ## 1) Windows local workspace path
 

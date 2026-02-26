@@ -344,6 +344,79 @@ try {
   Assert-True ($workspace2Obj.settings.'chatgpt.openOnStartup' -eq $true) "Expected chatgpt.openOnStartup=true in workspace settings."
   Assert-True ($workspace2Obj.settings.'chatgpt.runCodexInWindowsSubsystemForLinux' -eq $false) "Expected runCodexInWsl=false in workspace settings."
 
+  Write-Host "[test] Case 2.0: WSL UNC target fallback when WSL is unavailable"
+  $case20 = Join-Path $tmpRoot "case20-no-wsl-unc-fallback"
+  New-Item -ItemType Directory -Force -Path $case20 | Out-Null
+  $ws20 = Join-Path $case20 "fallback.code-workspace"
+  Set-Content -LiteralPath $ws20 -Value '{"folders":[{"path":"."}]}' -NoNewline
+
+  $case20InputFile = Join-Path $env:TEMP ("csi-wizard-input-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  $case20UncTarget = '\\wsl$\Ubuntu-NoWSL\home\user\project'
+  try {
+    Set-Content -LiteralPath $case20InputFile -Value "`r`n" -NoNewline
+    $case20Cmd = ('pushd "{0}" && powershell -NoProfile -ExecutionPolicy Bypass -File "{1}" -TargetPath "{2}" < "{3}"' -f $case20, $toolWizardPath, $case20UncTarget, $case20InputFile)
+    cmd /c $case20Cmd | Out-Host
+    Assert-True ($LASTEXITCODE -eq 0) "Case 2.0 wizard invocation failed for no-WSL UNC fallback."
+  } finally {
+    if (Test-Path -LiteralPath $case20InputFile -PathType Leaf) {
+      Remove-Item -LiteralPath $case20InputFile -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  $launcher20 = Join-Path $case20 "vsc_launcher.bat"
+  $meta20 = Join-Path $case20 ".vsc_launcher"
+  $runner20 = Join-Path $meta20 "runner.ps1"
+  $config20 = Join-Path $meta20 "config.json"
+  $vscodeSettings20 = Join-Path $case20 ".vscode\settings.json"
+
+  Assert-True (Test-Path -LiteralPath $launcher20 -PathType Leaf) "Case 2.0 launcher was not generated in fallback root."
+  Assert-True (Test-Path -LiteralPath $runner20 -PathType Leaf) "Case 2.0 runner was not generated in fallback root."
+  Assert-True (Test-Path -LiteralPath $config20 -PathType Leaf) "Case 2.0 config was not generated in fallback root."
+  Assert-True (Test-Path -LiteralPath $vscodeSettings20 -PathType Leaf) "Case 2.0 .vscode/settings.json was not generated in fallback root."
+
+  $config20Obj = Get-Content -LiteralPath $config20 -Raw | ConvertFrom-Json
+  Assert-True (-not [bool]$config20Obj.useRemoteWsl) "Case 2.0 should force local mode when WSL is unavailable."
+  Assert-True (-not [bool]$config20Obj.codexRunInWsl) "Case 2.0 should force local Codex mode when WSL is unavailable."
+
+  $vscode20Obj = Get-Content -LiteralPath $vscodeSettings20 -Raw | ConvertFrom-Json
+  Assert-True ($vscode20Obj.'chatgpt.runCodexInWindowsSubsystemForLinux' -eq $false) "Case 2.0 should set runCodexInWsl=false in .vscode/settings.json."
+  Assert-True ($vscode20Obj.'chatgpt.openOnStartup' -eq $true) "Case 2.0 should set chatgpt.openOnStartup=true in .vscode/settings.json."
+
+  $workspace20Obj = Get-Content -LiteralPath $ws20 -Raw | ConvertFrom-Json
+  Assert-True ($workspace20Obj.settings.'chatgpt.runCodexInWindowsSubsystemForLinux' -eq $false) "Case 2.0 should set runCodexInWsl=false in workspace settings."
+  Assert-True ($workspace20Obj.settings.'chatgpt.openOnStartup' -eq $true) "Case 2.0 should set chatgpt.openOnStartup=true in workspace settings."
+
+  $wizardLog20 = Get-LatestLog -LogsDir (Join-Path $meta20 "logs") -Pattern "wizard-*.log"
+  $wizardLog20Text = Get-Content -LiteralPath $wizardLog20 -Raw
+  Assert-Contains $wizardLog20Text "WSL target path is unavailable on this host. Falling back to current directory:" "Case 2.0 fallback note missing in wizard logs."
+
+  $dryRun20 = Invoke-RunnerDryRun -RunnerPath $runner20
+  Assert-True ($dryRun20.ExitCode -eq 0) "Case 2.0 runner dry-run failed."
+  Assert-Contains $dryRun20.Output "[dry-run] VSCode user-data-dir:" "Case 2.0 should use local launcher mode after fallback."
+
+  Write-Host "[test] Case 2.2: wizard auto-creates workspace when missing"
+  $case22 = Join-Path $tmpRoot "case22-create-workspace"
+  New-Item -ItemType Directory -Force -Path $case22 | Out-Null
+
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case22 -Responses @("y") -DebugMode -UseTargetFlag
+
+  $case22Name = Split-Path -Leaf $case22
+  $case22Workspace = Join-Path $case22 ("{0}.code-workspace" -f $case22Name)
+  $case22Config = Join-Path $case22 ".vsc_launcher\config.json"
+
+  Assert-True (Test-Path -LiteralPath $case22Workspace -PathType Leaf) "Case 2.2 should auto-create workspace file."
+  Assert-True (Test-Path -LiteralPath $case22Config -PathType Leaf) "Case 2.2 config file not found."
+
+  $case22ConfigObj = Get-Content -LiteralPath $case22Config -Raw | ConvertFrom-Json
+  Assert-True ($case22ConfigObj.launchMode -eq "workspace") "Case 2.2 launchMode should be workspace."
+  Assert-True ($case22ConfigObj.workspaceRelativePath -eq ("{0}.code-workspace" -f $case22Name)) "Case 2.2 workspaceRelativePath mismatch."
+
+  $case22WorkspaceObj = Get-Content -LiteralPath $case22Workspace -Raw | ConvertFrom-Json
+  Assert-True ($case22WorkspaceObj.folders.Count -ge 1) "Case 2.2 workspace should include folders entry."
+  Assert-True ($case22WorkspaceObj.folders[0].path -eq ".") "Case 2.2 workspace root folder should be '.'."
+  Assert-True ($case22WorkspaceObj.settings.'chatgpt.openOnStartup' -eq $true) "Case 2.2 workspace should set chatgpt.openOnStartup=true."
+  Assert-True ($case22WorkspaceObj.settings.'chatgpt.runCodexInWindowsSubsystemForLinux' -eq $false) "Case 2.2 workspace should set runCodexInWsl=false."
+
   $gitignoreText2 = Get-Content -LiteralPath $gitignore2 -Raw
   Assert-Contains $gitignoreText2 "# >>> codex-session-isolator >>>" "Managed gitignore block start missing."
   Assert-Contains $gitignoreText2 ".vsc_launcher/" "Expected metadata folder ignore entry missing."

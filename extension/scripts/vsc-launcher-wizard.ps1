@@ -223,6 +223,16 @@ function Test-WslAvailable {
   }
 }
 
+function Test-IsWslUncPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return $false
+  }
+
+  return $Path -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]'
+}
+
 function Get-RelativePathSafe {
   param(
     [Parameter(Mandatory = $true)]
@@ -718,6 +728,22 @@ function Save-WizardDefaults {
 
   Backup-PathIfExists -Path $DefaultsPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
   Set-Content -LiteralPath $DefaultsPath -Value ($payload | ConvertTo-Json -Depth 10)
+}
+
+function Get-DefaultWorkspaceFileName {
+  param([string]$RootPath)
+
+  $baseName = Split-Path -Leaf $RootPath
+  if ([string]::IsNullOrWhiteSpace($baseName)) {
+    $baseName = "workspace"
+  }
+
+  $safeName = $baseName -replace '[<>:"/\\|?*]', "-"
+  if ([string]::IsNullOrWhiteSpace($safeName)) {
+    $safeName = "workspace"
+  }
+
+  return "$safeName.code-workspace"
 }
 
 function Remove-LegacyGeneratedArtifacts {
@@ -1382,13 +1408,25 @@ $launcherBaseName = "vsc_launcher"
 $metadataDirName = ".vsc_launcher"
 $launcherFileName = if ($platformIsWindows) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
 $enableLoggingByDefault = [bool]$DebugMode
+$wslAvailable = $platformIsWindows -and (Test-WslAvailable)
+$deferredFallbackInfo = $null
 
 if ([string]::IsNullOrWhiteSpace($TargetPath)) {
   $TargetPath = Read-NonEmpty -Prompt "Enter target folder path (repo or code folder)"
 }
 
 if (-not (Test-Path -LiteralPath $TargetPath -PathType Any)) {
-  throw "Path not found: $TargetPath"
+  if ($platformIsWindows -and -not $wslAvailable -and (Test-IsWslUncPath -Path $TargetPath)) {
+    $fallbackTargetPath = (Get-Location).Path
+    if (-not (Test-Path -LiteralPath $fallbackTargetPath -PathType Any)) {
+      throw "Path not found: $TargetPath"
+    }
+
+    $deferredFallbackInfo = "WSL target path is unavailable on this host. Falling back to current directory: $fallbackTargetPath"
+    $TargetPath = $fallbackTargetPath
+  } else {
+    throw "Path not found: $TargetPath"
+  }
 }
 
 $resolvedTargetInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | Select-Object -First 1
@@ -1398,6 +1436,10 @@ $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Pa
 Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
 $defaultsInfo = Get-WizardDefaults -RootPath $targetRoot -MetadataDirName $metadataDirName
 $wizardDefaults = $defaultsInfo.Values
+
+if (-not [string]::IsNullOrWhiteSpace($deferredFallbackInfo)) {
+  Write-Info $deferredFallbackInfo
+}
 
 Write-Info ("Target root: {0}" -f $targetRoot)
 Write-Info ("Generated launcher file: {0}" -f $launcherFileName)
@@ -1420,7 +1462,20 @@ if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-worksp
   )
 
   if ($workspaceFiles.Count -eq 0) {
-    Write-Info "No workspace file found. Launch target defaulted to folder root."
+    $generatedWorkspaceFileName = Get-DefaultWorkspaceFileName -RootPath $targetRoot
+    $generatedWorkspacePath = Join-Path $targetRoot $generatedWorkspaceFileName
+    $workspacePayload = [ordered]@{
+      folders = @(
+        [ordered]@{ path = "." }
+      )
+    }
+
+    Backup-PathIfExists -Path $generatedWorkspacePath -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
+    Set-Content -LiteralPath $generatedWorkspacePath -Value ($workspacePayload | ConvertTo-Json -Depth 10)
+
+    $launchMode = "workspace"
+    $workspaceRelativePath = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $generatedWorkspacePath
+    Write-Info ("No workspace file found. Created workspace: {0}" -f $workspaceRelativePath)
   } elseif ($workspaceFiles.Count -eq 1) {
     $launchMode = "workspace"
     $workspaceRelativePath = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $workspaceFiles[0]
@@ -1441,7 +1496,6 @@ if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-worksp
 
 $useRemoteWsl = $false
 $wslDistro = ""
-$wslAvailable = $platformIsWindows -and (Test-WslAvailable)
 
 if ($platformIsWindows -and $wslAvailable) {
   $remoteDefault = if ($null -ne $wizardDefaults.useRemoteWsl) { [bool]$wizardDefaults.useRemoteWsl } else { $true }

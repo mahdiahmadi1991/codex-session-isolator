@@ -101,9 +101,10 @@ The wizard asks for:
 Wizard defaults:
 
 - If exactly one workspace file exists in target path, it is selected automatically.
-- If no workspace file exists, folder target is used.
+- If no workspace file exists, wizard creates `<project-name>.code-workspace` and uses it as launch target.
 - It asks workspace selection only when more than one workspace file is found.
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
+- If WSL is not installed/available and target path is WSL UNC (`\\wsl$\...`), wizard falls back to current directory and generates a local launcher config (`useRemoteWsl=false`, `codexRunInWsl=false`).
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
 - First-run defaults on Windows (when WSL is available) are:
   - `Launch VS Code in Remote WSL mode = Yes`

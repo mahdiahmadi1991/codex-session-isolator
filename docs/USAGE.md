@@ -91,8 +91,9 @@ Wizard behavior:
 - If launch target is a `.code-workspace` file, it also updates the workspace `settings` block with the same values.
 - Auto-selects workspace when exactly one workspace file exists.
 - Asks workspace selection only when more than one workspace file exists.
-- Uses folder target automatically when no workspace file exists.
+- Creates `<project-name>.code-workspace` and uses it when no workspace file exists.
 - Skips WSL-related questions automatically when WSL is unavailable.
+- If target path is WSL UNC (`\\wsl$\...`) while WSL is unavailable, wizard falls back to current directory and generates local launcher/Codex settings.
 - Remembers previous answers and uses them as defaults for faster wizard runs.
 - First-run defaults on Windows (when WSL is available):
   - `Launch VS Code in Remote WSL mode`: `Yes`

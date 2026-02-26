@@ -507,22 +507,22 @@ async function confirmLauncherChanges(targetRoot: string): Promise<boolean> {
     return true;
   }
 
-  const action = await vscode.window.showWarningMessage(
-    "Initialize launcher for this project?",
+  const action = await vscode.window.showInformationMessage(
+    "Initialize project launcher for this workspace?",
     {
       modal: true,
       detail:
         `Target: ${targetRoot}\n\n` +
-        "This runs a bundled PowerShell wizard and may update project files:\n" +
+        "This runs the bundled setup wizard and updates project-local files:\n" +
         "- .vscode/settings.json\n" +
         "- workspace settings in *.code-workspace\n" +
         "- .gitignore managed block\n" +
         "- vsc_launcher.* and .vsc_launcher/*"
     },
-    "Initialize"
+    "Continue"
   );
 
-  return action === "Initialize";
+  return action === "Continue";
 }
 
 async function findWorkspaceFiles(root: string, maxDepth: number): Promise<string[]> {
