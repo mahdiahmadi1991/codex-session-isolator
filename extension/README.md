@@ -15,6 +15,7 @@ It keeps Codex session state isolated per project by driving the existing launch
 - Reopens VS Code through the generated launcher.
 - Opens launcher logs for debugging.
 - Opens launcher config quickly for inspection.
+- Runs preflight safety checks before initialization (writability + managed file plan).
 
 When launched through generated launcher:
 

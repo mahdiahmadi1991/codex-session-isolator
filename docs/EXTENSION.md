@@ -45,6 +45,10 @@ Run Extension Development Host:
 
 - Extension requires PowerShell (`powershell` or `pwsh`).
 - On Windows, WSL-related prompts are shown only when WSL is available.
+- Initialization runs preflight checks before applying changes:
+  - verifies target folder exists and is writable
+  - inspects managed paths and shows create/reuse/overwrite-with-backup plan
+  - requires explicit confirmation when managed files already exist
 - Extension wizard default answers on Windows+WSL:
   - Remote WSL launch: `Yes`
   - Codex run in WSL: `Yes`
