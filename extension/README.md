@@ -64,7 +64,7 @@ If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mi
 ## Requirements
 
 - VS Code 1.95+
-- PowerShell available (`powershell` or `pwsh`)
+- PowerShell available (`pwsh` preferred on Windows, fallback to `powershell.exe`)
 - Optional for WSL modes: WSL installed and configured
 
 ## Settings

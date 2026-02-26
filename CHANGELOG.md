@@ -48,6 +48,7 @@ All notable changes to this project are documented in this file.
 - Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
 - Extension wizard execution is now prompt-driven with unknown-prompt fail-fast behavior, structured per-prompt answer logs, and a hard 120-second timeout to prevent indefinite hangs.
 - Extension now includes a one-click setup command (`Setup (Initialize & Reopen)`), progress notifications for initialize/reopen operations, and improved Reopen missing-launcher options (`Initialize only`, `Initialize & Reopen`, `Cancel`).
+- Extension PowerShell detection now prefers `pwsh` on Windows, falls back to `powershell.exe` after a startup probe, and shows clearer guidance when no PowerShell runtime is available.
 
 ## [0.3.2] - 2026-02-25
 

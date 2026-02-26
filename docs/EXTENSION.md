@@ -44,6 +44,7 @@ Run Extension Development Host:
 ## Notes
 
 - Extension requires PowerShell (`powershell` or `pwsh`).
+- On Windows, extension prefers `pwsh` (PowerShell 7) and falls back to `powershell.exe` after a startup probe check.
 - On Windows, WSL-related prompts are shown only when WSL is available.
 - Initialization runs preflight checks before applying changes:
   - verifies target folder exists and is writable

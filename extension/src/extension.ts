@@ -9,6 +9,9 @@ import {
   WizardPromptAnswers,
   WizardPromptId
 } from "./wizardPromptMatcher";
+import {
+  detectPowerShellCommand as detectPowerShellCommandWithProbe
+} from "./powerShellDetection";
 
 type WizardDefaults = {
   useRemoteWsl?: boolean;
@@ -172,13 +175,14 @@ async function initializeLauncherForTarget(
     return false;
   }
 
-  const psCommand = await detectPowerShellCommand();
-  if (!psCommand) {
+  const psDetection = await detectPowerShellCommandRuntime(output);
+  if (!psDetection.command) {
     void vscode.window.showErrorMessage(
-      "PowerShell was not found. Install powershell/pwsh to run the launcher wizard."
+      "No PowerShell runtime found. Install PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`), then retry. See 'Codex Session Isolator' output logs."
     );
     return false;
   }
+  const psCommand = psDetection.command;
 
   const debugMode = getBooleanSetting("debugWizardByDefault", false);
 
@@ -514,19 +518,24 @@ async function readWizardDefaults(targetRoot: string): Promise<WizardDefaults> {
   }
 }
 
-async function detectPowerShellCommand(): Promise<string | undefined> {
-  if (process.platform === "win32") {
-    return "powershell.exe";
+async function detectPowerShellCommandRuntime(
+  output: vscode.OutputChannel
+): Promise<{ command?: string }> {
+  const detection = await detectPowerShellCommandWithProbe(process.platform, runCommand);
+  if (detection.command) {
+    output.appendLine(`[extension] PowerShell detected: ${detection.command}`);
+    return { command: detection.command };
   }
 
-  for (const candidate of ["pwsh", "powershell"]) {
-    const result = await runCommand(candidate, ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"]);
-    if (result.code === 0) {
-      return candidate;
-    }
+  output.appendLine("[extension] PowerShell detection failed. Attempt summary:");
+  for (const attempt of detection.attempts) {
+    const reason = attempt.stderr.trim().replace(/\s+/g, " ").slice(0, 200);
+    output.appendLine(
+      `[extension] - ${attempt.command}: exit=${attempt.code}${reason ? `, stderr=${reason}` : ""}`
+    );
   }
 
-  return undefined;
+  return {};
 }
 
 async function isWslAvailable(): Promise<boolean> {
