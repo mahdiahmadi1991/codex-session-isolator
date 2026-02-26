@@ -2,7 +2,13 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { existsSync, Dirent } from "fs";
-import { spawn } from "child_process";
+import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import {
+  createWizardPromptParserState,
+  consumeWizardOutputChunk,
+  WizardPromptAnswers,
+  WizardPromptId
+} from "./wizardPromptMatcher";
 
 type WizardDefaults = {
   useRemoteWsl?: boolean;
@@ -16,6 +22,14 @@ type ProcessResult = {
   stderr: string;
 };
 
+type WizardRunFailureKind = "timeout" | "unknownPrompt" | "processError";
+
+type WizardRunResult = {
+  exitCode: number;
+  failureKind?: WizardRunFailureKind;
+  message?: string;
+};
+
 const EXTENSION_NAMESPACE = "codexSessionIsolator";
 const LEGACY_NAMESPACE = "codexProjectIsolator";
 
@@ -27,6 +41,7 @@ const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
 const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
 const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
 const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
+const WIZARD_TIMEOUT_MS = 120_000;
 
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
@@ -131,8 +146,22 @@ async function initializeLauncher(
   output.show(true);
   output.appendLine(`[extension] Running wizard for: ${targetRoot}`);
 
-  const exitCode = await runWizardProcess(psCommand, args, responses, targetRoot, output);
-  if (exitCode !== 0) {
+  const runResult = await runWizardProcess(psCommand, args, responses, targetRoot, output);
+  if (runResult.failureKind === "timeout") {
+    void vscode.window.showErrorMessage(
+      "Launcher wizard timed out after 120 seconds. Check 'Codex Session Isolator' output logs for details."
+    );
+    return;
+  }
+
+  if (runResult.failureKind === "unknownPrompt") {
+    void vscode.window.showErrorMessage(
+      "Launcher wizard stopped on an unknown prompt to avoid hanging. Check 'Codex Session Isolator' output logs."
+    );
+    return;
+  }
+
+  if (runResult.exitCode !== 0) {
     void vscode.window.showErrorMessage(
       "Launcher wizard failed. See 'Codex Session Isolator' output channel for details."
     );
@@ -158,41 +187,138 @@ async function initializeLauncher(
 async function runWizardProcess(
   command: string,
   args: string[],
-  responses: string[],
+  responses: WizardPromptAnswers,
   cwd: string,
   output: vscode.OutputChannel
-): Promise<number> {
-  return new Promise<number>((resolve) => {
+): Promise<WizardRunResult> {
+  return new Promise<WizardRunResult>((resolve) => {
     const child = spawn(command, args, { cwd, env: process.env });
+    const parserState = createWizardPromptParserState();
+    let settled = false;
+
+    const finalize = (result: WizardRunResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutHandle);
+      resolve(result);
+    };
+
+    const fail = (failureKind: WizardRunFailureKind, message: string): void => {
+      output.appendLine(`[extension] ${message}`);
+      terminateProcess(child, output);
+      finalize({ exitCode: 1, failureKind, message });
+    };
+
+    const handleChunk = (stream: "stdout" | "stderr", chunk: Buffer): void => {
+      if (settled) {
+        return;
+      }
+
+      const text = chunk.toString();
+      output.append(text);
+
+      const actions = consumeWizardOutputChunk(parserState, text, responses);
+      for (const action of actions) {
+        if (action.kind === "unknown") {
+          fail(
+            "unknownPrompt",
+            `Unexpected wizard prompt: ${action.promptText} (${action.reason})`
+          );
+          return;
+        }
+
+        const answer = `${action.answer}\n`;
+        if (!child.stdin.writable) {
+          fail(
+            "processError",
+            `Wizard stdin is not writable when answering prompt '${action.promptId}'.`
+          );
+          return;
+        }
+
+        output.appendLine(
+          `[extension][wizard-answer] ${JSON.stringify({
+            stream,
+            promptId: action.promptId,
+            prompt: action.promptText,
+            answer: formatPromptAnswerForLog(action.promptId, action.answer)
+          })}`
+        );
+
+        child.stdin.write(answer);
+      }
+    };
 
     child.stdout.on("data", (chunk: Buffer) => {
-      output.append(chunk.toString());
+      handleChunk("stdout", chunk);
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
-      output.append(chunk.toString());
+      handleChunk("stderr", chunk);
     });
 
     child.on("error", (error: Error) => {
-      output.appendLine(`[extension] Failed to start wizard process: ${error.message}`);
-      resolve(1);
+      finalize({
+        exitCode: 1,
+        failureKind: "processError",
+        message: `Failed to start wizard process: ${error.message}`
+      });
     });
 
     child.on("close", (code: number | null) => {
-      resolve(code ?? 1);
+      finalize({ exitCode: code ?? 1 });
     });
 
-    if (child.stdin.writable) {
-      const payload = responses.join("\n") + "\n";
-      child.stdin.write(payload);
-      child.stdin.end();
-    }
+    const timeoutHandle = setTimeout(() => {
+      fail(
+        "timeout",
+        `Wizard process timed out after ${Math.floor(WIZARD_TIMEOUT_MS / 1000)} seconds.`
+      );
+    }, WIZARD_TIMEOUT_MS);
   });
 }
 
-async function buildWizardResponses(targetRoot: string): Promise<string[] | undefined> {
+function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.OutputChannel): void {
+  try {
+    if (child.stdin.writable) {
+      child.stdin.end();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`[extension] Failed to close wizard stdin: ${message}`);
+  }
+
+  try {
+    if (!child.killed) {
+      child.kill();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`[extension] Failed to terminate wizard process: ${message}`);
+  }
+}
+
+function formatPromptAnswerForLog(promptId: WizardPromptId, answer: string): string {
+  if (promptId === "workspaceSelection" || promptId === "wslDistroSelection") {
+    return `option_${answer}`;
+  }
+
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === "y" || normalized === "yes") {
+    return "yes";
+  }
+  if (normalized === "n" || normalized === "no") {
+    return "no";
+  }
+
+  return "value";
+}
+
+async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAnswers | undefined> {
   const defaults = await readWizardDefaults(targetRoot);
-  const responses: string[] = [];
+  const responses: WizardPromptAnswers = {};
 
   const workspaceFiles = await findWorkspaceFiles(targetRoot, 3);
   if (workspaceFiles.length > 1) {
@@ -200,7 +326,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
     if (selected === undefined) {
       return undefined;
     }
-    responses.push(String(selected + 1));
+    responses.workspaceSelection = String(selected + 1);
   }
 
   const wslAvailable = process.platform === "win32" && (await isWslAvailable());
@@ -212,7 +338,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
     if (useRemoteWsl === undefined) {
       return undefined;
     }
-    responses.push(useRemoteWsl ? "y" : "n");
+    responses.remoteWsl = useRemoteWsl ? "y" : "n";
 
     if (useRemoteWsl) {
       const distros = await getWslDistros();
@@ -229,7 +355,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
         if (distroIndex === undefined) {
           return undefined;
         }
-        responses.push(String(distroIndex + 1));
+        responses.wslDistroSelection = String(distroIndex + 1);
       }
     }
 
@@ -240,7 +366,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
     if (codexRunInWsl === undefined) {
       return undefined;
     }
-    responses.push(codexRunInWsl ? "y" : "n");
+    responses.codexRunInWsl = codexRunInWsl ? "y" : "n";
   }
 
   const ignoreSessions = await promptBoolean(
@@ -250,7 +376,7 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
   if (ignoreSessions === undefined) {
     return undefined;
   }
-  responses.push(ignoreSessions ? "y" : "n");
+  responses.ignoreSessions = ignoreSessions ? "y" : "n";
 
   return responses;
 }

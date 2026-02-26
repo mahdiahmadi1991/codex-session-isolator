@@ -126,6 +126,7 @@
     "sync:wizard": "node ./scripts/sync-wizard.mjs",
     "precompile": "npm run sync:wizard",
     "compile": "tsc -p ./",
+    "test:unit": "npm run compile && node --test ./test/**/*.test.js",
     "watch": "tsc -watch -p ./",
     "prepackage": "npm run sync:wizard",
     "package": "npx @vscode/vsce package",
