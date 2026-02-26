@@ -193,6 +193,15 @@ chmod +x ./launchers/codex-session-isolator.sh
 ./launchers/codex-session-isolator.sh /path/to/my-app
 ```
 
+Manual reopen checks (VS Code extension on macOS/Linux):
+
+1. Run `Codex Session Isolator: Initialize Launcher` for a test project.
+2. Make launcher non-executable and verify reopen still works:
+   `chmod -x /path/to/project/vsc_launcher.sh`
+3. Run `Codex Session Isolator: Reopen With Launcher` and confirm launcher starts (extension will try `chmod +x` then execute).
+4. Validate shell fallback by running VS Code in an environment where `bash` is unavailable but `sh` exists, then run `Reopen With Launcher` and confirm it still starts.
+5. If launch fails, open `Codex Session Isolator` output channel and verify shell-by-shell failure logs.
+
 ## Documentation
 
 - Usage: `docs/USAGE.md`

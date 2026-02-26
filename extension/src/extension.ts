@@ -688,7 +688,13 @@ async function reopenWithLauncher(
     return false;
   }
 
-  await vscode.window.withProgress(
+  const appendReopenLog = (message: string) => {
+    if (output) {
+      output.appendLine(`[extension][reopen] ${message}`);
+    }
+  };
+
+  const launched = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: "Codex Session Isolator: Reopen With Launcher",
@@ -703,17 +709,44 @@ async function reopenWithLauncher(
           stdio: "ignore"
         });
         child.unref();
-      } else {
-        await runCommand("chmod", ["+x", launcherPath]);
-        const child = spawn("bash", [launcherPath], {
-          cwd: targetRoot,
-          detached: true,
-          stdio: "ignore"
-        });
-        child.unref();
+        return true;
       }
+
+      const isExecutableBefore = await isFileExecutable(launcherPath);
+      if (!isExecutableBefore) {
+        const chmodResult = await runCommand("chmod", ["+x", launcherPath]);
+        if (chmodResult.code !== 0) {
+          appendReopenLog(
+            `Warning: chmod +x failed for launcher (exit=${chmodResult.code}). Trying to run via shell fallback anyway.`
+          );
+        } else {
+          appendReopenLog("Launcher executable bit set with chmod +x.");
+        }
+      } else {
+        appendReopenLog("Launcher is already executable; skipping chmod.");
+      }
+
+      const shellCandidates = ["bash", "zsh", "sh"];
+      for (const shellName of shellCandidates) {
+        const launch = await trySpawnDetached(shellName, [launcherPath], targetRoot);
+        if (launch.ok) {
+          appendReopenLog(`Launcher started using shell: ${shellName}`);
+          return true;
+        }
+
+        appendReopenLog(`Shell launch failed: ${shellName} (${launch.reason})`);
+      }
+
+      return false;
     }
   );
+
+  if (!launched) {
+    void vscode.window.showErrorMessage(
+      "Failed to reopen with launcher using bash/zsh/sh. Ensure at least one shell is installed and check 'Codex Session Isolator' output logs."
+    );
+    return false;
+  }
 
   const shouldClose = getBooleanSetting("closeWindowAfterReopen", true);
   if (shouldClose) {
@@ -723,6 +756,39 @@ async function reopenWithLauncher(
   }
 
   return true;
+}
+
+async function isFileExecutable(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    return (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+async function trySpawnDetached(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<{ ok: boolean; reason: string }> {
+  return new Promise<{ ok: boolean; reason: string }>((resolve) => {
+    const child = spawn(command, args, {
+      cwd,
+      detached: true,
+      stdio: "ignore"
+    });
+
+    child.once("error", (error: Error) => {
+      const message = error.message || "unknown spawn error";
+      resolve({ ok: false, reason: message });
+    });
+
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ ok: true, reason: "" });
+    });
+  });
 }
 
 async function ensureWorkspaceTrusted(): Promise<boolean> {

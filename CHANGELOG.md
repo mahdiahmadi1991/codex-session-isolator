@@ -49,6 +49,7 @@ All notable changes to this project are documented in this file.
 - Extension wizard execution is now prompt-driven with unknown-prompt fail-fast behavior, structured per-prompt answer logs, and a hard 120-second timeout to prevent indefinite hangs.
 - Extension now includes a one-click setup command (`Setup (Initialize & Reopen)`), progress notifications for initialize/reopen operations, and improved Reopen missing-launcher options (`Initialize only`, `Initialize & Reopen`, `Cancel`).
 - Extension PowerShell detection now prefers `pwsh` on Windows, falls back to `powershell.exe` after a startup probe, and shows clearer guidance when no PowerShell runtime is available.
+- Extension reopen flow on macOS/Linux now falls back across `bash` -> `zsh` -> `sh`, and `chmod` failures now produce warning logs while still attempting shell execution.
 
 ## [0.3.2] - 2026-02-25
 
