@@ -106,10 +106,11 @@ Wizard defaults:
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
 - If WSL is not installed/available and target path is WSL UNC (`\\wsl$\...`), wizard falls back to current directory and generates a local launcher config (`useRemoteWsl=false`, `codexRunInWsl=false`).
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
-- First-run defaults on Windows (when WSL is available) are:
-  - `Launch VS Code in Remote WSL mode = Yes`
-  - `Set Codex to run in WSL for this project = Yes`
-  - WSL distro default = your Windows default distro (`wsl --status`)
+- First-run defaults on Windows (when WSL is available) are context-aware:
+  - local Windows path -> `Launch VS Code in Remote WSL mode = No`
+  - Remote WSL workspace or WSL UNC target (`\\wsl$\...`) -> `Launch VS Code in Remote WSL mode = Yes`
+  - `Set Codex to run in WSL for this project` is asked only when Remote WSL mode is `Yes` (default `Yes`)
+  - WSL distro default = your Windows default distro (`wsl --status`) when distro selection is needed
   - `Ignore Codex chat sessions in gitignore = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.

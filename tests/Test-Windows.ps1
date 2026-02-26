@@ -619,6 +619,25 @@ try {
         Assert-Contains $case6GitignoreText "!.codex/sessions/**" "Case 6 default should keep sessions unignored."
         Assert-Contains $case6GitignoreText "!.codex/archived_sessions/**" "Case 6 default should keep archived sessions unignored."
 
+        Write-Host "[test] Case 6.1: local Windows path defaults to local mode"
+        $case61 = Join-Path $tmpRoot "case61-local-defaults"
+        New-Item -ItemType Directory -Force -Path $case61 | Out-Null
+        Set-Content -LiteralPath (Join-Path $case61 "local.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
+
+        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case61 -Responses @("", "") -DebugMode -UseTargetFlag
+
+        $case61ConfigPath = Join-Path $case61 ".vsc_launcher\config.json"
+        Assert-True (Test-Path -LiteralPath $case61ConfigPath -PathType Leaf) "Case 6.1 config not generated."
+
+        $case61Config = Get-Content -LiteralPath $case61ConfigPath -Raw | ConvertFrom-Json
+        Assert-True (-not [bool]$case61Config.useRemoteWsl) "Case 6.1 default should disable Remote WSL for local Windows path."
+        Assert-True (-not [bool]$case61Config.codexRunInWsl) "Case 6.1 should skip/disable Codex-in-WSL when Remote WSL is disabled."
+
+        $case61WizardLogPath = Get-LatestLog -LogsDir (Join-Path $case61 ".vsc_launcher\logs") -Pattern "wizard-*.log"
+        $case61WizardLog = Get-Content -LiteralPath $case61WizardLogPath -Raw
+        Assert-Contains $case61WizardLog "local Windows path detected" "Case 6.1 wizard log should explain local Windows default."
+        Assert-Contains $case61WizardLog "Codex-in-WSL prompt skipped because Remote WSL launch is disabled." "Case 6.1 should skip Codex-in-WSL prompt."
+
         function Set-Case6Config {
           param(
             [bool]$UseRemoteWsl,

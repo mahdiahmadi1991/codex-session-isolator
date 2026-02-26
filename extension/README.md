@@ -51,10 +51,11 @@ Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
 
-Default wizard answers on Windows + WSL:
+Default wizard answers on Windows + WSL are context-aware:
 
-- Remote WSL launch: `Yes`
-- Codex run in WSL: `Yes`
+- Local Windows path: Remote WSL launch defaults to `No`
+- Remote WSL workspace or WSL UNC target (`\\wsl$\...`): Remote WSL launch defaults to `Yes`
+- Codex run in WSL is prompted only when Remote WSL is `Yes` (default `Yes`)
 - Distro default: Windows default distro
 - Ignore Codex chat sessions in gitignore: `No`
 
