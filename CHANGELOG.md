@@ -26,10 +26,6 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - README and usage docs now include extension-based workflow.
-- Wizard now falls back to current directory when a WSL UNC target (`\\wsl$\...`) is passed on a host without WSL, generating local launcher settings instead of aborting before file generation.
-- Windows integration tests now include a no-WSL WSL-UNC fallback regression scenario.
-- Extension launcher initialization confirmation now uses an informational modal message with calmer wording (instead of a warning-style prompt).
-- Wizard now auto-creates `<project-name>.code-workspace` when no workspace file exists and uses it as launch target.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Extension metadata and README content were enriched for Marketplace readiness.
@@ -46,10 +42,8 @@ All notable changes to this project are documented in this file.
 - Extension manifest is now non-preview for stable release discipline.
 - Extension publish workflow now auto-publishes stable builds on pushes to `main` while preserving pre-release publish on `pre-release`.
 - Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
-- Extension wizard execution is now prompt-driven with unknown-prompt fail-fast behavior, structured per-prompt answer logs, and a hard 120-second timeout to prevent indefinite hangs.
-- Extension now includes a one-click setup command (`Setup (Initialize & Reopen)`), progress notifications for initialize/reopen operations, and improved Reopen missing-launcher options (`Initialize only`, `Initialize & Reopen`, `Cancel`).
-- Extension PowerShell detection now prefers `pwsh` on Windows, falls back to `powershell.exe` after a startup probe, and shows clearer guidance when no PowerShell runtime is available.
-- Extension reopen flow on macOS/Linux now falls back across `bash` -> `zsh` -> `sh`, and `chmod` failures now produce warning logs while still attempting shell execution.
+- README quick-start now includes install/setup/verify steps for extension users and optional one-click setup command usage when available.
+- README now includes actionable cleanup/uninstall and minimal troubleshooting steps with explicit log locations.
 
 ## [0.3.2] - 2026-02-25
 

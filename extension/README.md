@@ -15,7 +15,6 @@ It keeps Codex session state isolated per project by driving the existing launch
 - Reopens VS Code through the generated launcher.
 - Opens launcher logs for debugging.
 - Opens launcher config quickly for inspection.
-- Runs preflight safety checks before initialization (writability + managed file plan).
 
 When launched through generated launcher:
 
@@ -26,82 +25,55 @@ When launched through generated launcher:
 
 ## Commands
 
-- `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
-- `Codex Session Isolator: Dry Run Initialize`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
 ## Quick Start
 
-1. Open your project folder/workspace in VS Code.
-2. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
-3. Answer wizard questions.
-4. VS Code reopens through the generated launcher automatically.
-5. Verify in terminal:
+1. Install extension `2ma.codex-session-isolator` from VS Code Marketplace.
+2. Open your project folder/workspace in VS Code.
+3. Setup launcher:
+   - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then run `Codex Session Isolator: Reopen With Launcher`.
+4. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
-
-Manual flow is still available:
-
-1. `Codex Session Isolator: Initialize Launcher`
-2. `Codex Session Isolator: Reopen With Launcher`
 
 Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
 
-Default wizard answers on Windows + WSL are context-aware:
+Default wizard answers on Windows + WSL:
 
-- Local Windows path: Remote WSL launch defaults to `No`
-- Remote WSL workspace or WSL UNC target (`\\wsl$\...`): Remote WSL launch defaults to `Yes`
-- Codex run in WSL is prompted only when Remote WSL is `Yes` (default `Yes`)
+- Remote WSL launch: `Yes`
+- Codex run in WSL: `Yes`
 - Distro default: Windows default distro
 - Ignore Codex chat sessions in gitignore: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
 
-## Files this extension modifies
+## Cleanup/Uninstall
 
-Initialization updates only project-local files in the selected target root.
+To remove generated artifacts safely from one project:
 
-- `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
-- `.vsc_launcher/config.json` + `.vsc_launcher/runner.ps1` (Windows)
-- `.vsc_launcher/config.env` (Linux/macOS)
-- `.vsc_launcher/wizard.defaults.json`
-- `.vsc_launcher/logs/wizard-<timestamp>-<pid>.log`
-- `.vscode/settings.json`
-- selected `*.code-workspace` settings (when launch mode is workspace)
-- managed Codex Session Isolator block in `.gitignore`
-
-Before overwrite or legacy cleanup, backups are written under:
-
-- `<project>/.vsc_launcher/backups/<timestamp-pid>/`
-
-To preview exact create/modify/remove operations and `CODEX_HOME`, run:
-
-- `Codex Session Isolator: Dry Run Initialize`
-
-## Cleanup/Uninstall steps
-
-To remove generated artifacts from one project:
-
-1. Delete `vsc_launcher.bat` or `vsc_launcher.sh`.
-2. Delete `.vsc_launcher/`.
-3. Remove the managed block between
-   `# >>> codex-session-isolator >>>` and
-   `# <<< codex-session-isolator <<<` from `.gitignore`.
-4. Optionally remove extension-managed keys from `.vscode/settings.json` and workspace file settings:
+1. Delete launcher files from project root:
+   - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+2. Delete `.vsc_launcher/` (includes logs/config/backups).
+3. Remove managed block in `.gitignore`:
+   - from `# >>> codex-session-isolator >>>`
+   - to `# <<< codex-session-isolator <<<`
+4. Optional: remove extension-managed settings if no longer needed:
    - `chatgpt.runCodexInWindowsSubsystemForLinux`
    - `chatgpt.openOnStartup`
    - `chatgpt.cliExecutable` (only if it points to `.vsc_launcher/codex-wsl-wrapper.sh`)
-5. Optionally delete project `.codex/` if you do not need isolated session state/history.
+5. Optional: delete project `.codex/` only if you do not need that project's isolated session history/state.
 
 ## Requirements
 
 - VS Code 1.95+
-- PowerShell available (`pwsh` preferred on Windows, fallback to `powershell.exe`)
+- PowerShell available (`powershell` or `pwsh`)
 - Optional for WSL modes: WSL installed and configured
 
 ## Settings
@@ -121,9 +93,17 @@ To remove generated artifacts from one project:
 
 ## Troubleshooting
 
-- If launcher generation fails, check Output channel: `Codex Session Isolator`.
-- Use `Open Launcher Logs` command and inspect `.vsc_launcher/logs`.
-- If WSL options do not appear, verify `wsl --status` succeeds on system.
+- `PowerShell was not found`:
+  install `pwsh` (PowerShell 7) or `powershell.exe`, then run Initialize again.
+- `Launcher file not found in target root`:
+  run `Initialize Launcher` first (or the one-click setup command if available).
+- WSL prompts/options are missing:
+  run `wsl --status`; if unavailable, use local mode or install/configure WSL.
+- Permission/write errors:
+  check folder write access and rerun. Existing managed files are backed up under `.vsc_launcher/backups/`.
+- Always check logs:
+  1. VS Code Output channel: `Codex Session Isolator`
+  2. Project logs: `.vsc_launcher/logs`
 
 ## Source
 
