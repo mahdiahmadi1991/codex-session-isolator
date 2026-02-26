@@ -91,13 +91,15 @@ Wizard behavior:
 - If launch target is a `.code-workspace` file, it also updates the workspace `settings` block with the same values.
 - Auto-selects workspace when exactly one workspace file exists.
 - Asks workspace selection only when more than one workspace file exists.
-- Uses folder target automatically when no workspace file exists.
+- Creates `<project-name>.code-workspace` and uses it when no workspace file exists.
 - Skips WSL-related questions automatically when WSL is unavailable.
+- If target path is WSL UNC (`\\wsl$\...`) while WSL is unavailable, wizard falls back to current directory and generates local launcher/Codex settings.
 - Remembers previous answers and uses them as defaults for faster wizard runs.
-- First-run defaults on Windows (when WSL is available):
-  - `Launch VS Code in Remote WSL mode`: `Yes`
-  - `Set Codex to run in WSL for this project`: `Yes`
-  - WSL distro default: Windows default distro (`wsl --status`)
+- First-run defaults on Windows (when WSL is available) are context-aware:
+  - local Windows path: `Launch VS Code in Remote WSL mode = No`
+  - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
+  - `Set Codex to run in WSL for this project` is prompted only when Remote WSL mode is `Yes` (default `Yes`)
+  - WSL distro default: Windows default distro (`wsl --status`) when prompted
   - `Ignore Codex chat sessions in gitignore`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.

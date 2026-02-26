@@ -32,11 +32,12 @@ When launched through generated launcher:
 
 ## Quick Start
 
-1. Open your project folder/workspace in VS Code.
-2. Run `Codex Session Isolator: Initialize Launcher`.
-3. Answer wizard questions.
-4. Run `Codex Session Isolator: Reopen With Launcher`.
-5. Verify in terminal:
+1. Install extension `2ma.codex-session-isolator` from VS Code Marketplace.
+2. Open your project folder/workspace in VS Code.
+3. Setup launcher:
+   - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then run `Codex Session Isolator: Reopen With Launcher`.
+4. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
 
@@ -52,6 +53,22 @@ Default wizard answers on Windows + WSL:
 - Ignore Codex chat sessions in gitignore: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
+
+## Cleanup/Uninstall
+
+To remove generated artifacts safely from one project:
+
+1. Delete launcher files from project root:
+   - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+2. Delete `.vsc_launcher/` (includes logs/config/backups).
+3. Remove managed block in `.gitignore`:
+   - from `# >>> codex-session-isolator >>>`
+   - to `# <<< codex-session-isolator <<<`
+4. Optional: remove extension-managed settings if no longer needed:
+   - `chatgpt.runCodexInWindowsSubsystemForLinux`
+   - `chatgpt.openOnStartup`
+   - `chatgpt.cliExecutable` (only if it points to `.vsc_launcher/codex-wsl-wrapper.sh`)
+5. Optional: delete project `.codex/` only if you do not need that project's isolated session history/state.
 
 ## Requirements
 
@@ -76,9 +93,17 @@ If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mi
 
 ## Troubleshooting
 
-- If launcher generation fails, check Output channel: `Codex Session Isolator`.
-- Use `Open Launcher Logs` command and inspect `.vsc_launcher/logs`.
-- If WSL options do not appear, verify `wsl --status` succeeds on system.
+- `PowerShell was not found`:
+  install `pwsh` (PowerShell 7) or `powershell.exe`, then run Initialize again.
+- `Launcher file not found in target root`:
+  run `Initialize Launcher` first (or the one-click setup command if available).
+- WSL prompts/options are missing:
+  run `wsl --status`; if unavailable, use local mode or install/configure WSL.
+- Permission/write errors:
+  check folder write access and rerun. Existing managed files are backed up under `.vsc_launcher/backups/`.
+- Always check logs:
+  1. VS Code Output channel: `Codex Session Isolator`
+  2. Project logs: `.vsc_launcher/logs`
 
 ## Source
 

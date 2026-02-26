@@ -10,10 +10,17 @@ The extension provides a hybrid UX:
 
 ## Commands
 
+- `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
+
+Recommended fresh-project flow:
+
+1. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+2. Complete wizard prompts.
+3. VS Code reopens automatically with generated launcher.
 
 ## Settings
 
@@ -37,7 +44,9 @@ Run Extension Development Host:
 ## Notes
 
 - Extension requires PowerShell (`powershell` or `pwsh`).
+- On Windows, extension prefers `pwsh` (PowerShell 7) and falls back to `powershell.exe` after a startup probe check.
 - On Windows, WSL-related prompts are shown only when WSL is available.
+- On macOS/Linux, `Reopen With Launcher` tries `bash`, then `zsh`, then `sh`, and logs shell fallback/chmod warnings in the extension output channel.
 - Extension wizard default answers on Windows+WSL:
   - Remote WSL launch: `Yes`
   - Codex run in WSL: `Yes`

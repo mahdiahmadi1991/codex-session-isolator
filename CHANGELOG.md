@@ -42,6 +42,8 @@ All notable changes to this project are documented in this file.
 - Extension manifest is now non-preview for stable release discipline.
 - Extension publish workflow now auto-publishes stable builds on pushes to `main` while preserving pre-release publish on `pre-release`.
 - Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
+- README quick-start now includes install/setup/verify steps for extension users and optional one-click setup command usage when available.
+- README now includes actionable cleanup/uninstall and minimal troubleshooting steps with explicit log locations.
 
 ## [0.3.2] - 2026-02-25
 

@@ -133,6 +133,18 @@ Marketplace identifier:
 
 - `2ma.codex-session-isolator`
 
+Quick start (Marketplace install -> setup -> verify):
+
+1. Install `2ma.codex-session-isolator` from VS Code Marketplace.
+2. Open your project in VS Code.
+3. Setup launcher:
+   - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, then `Codex Session Isolator: Reopen With Launcher`.
+4. Verify in terminal:
+   - Windows PowerShell: `echo $env:CODEX_HOME`
+   - bash/zsh: `echo "$CODEX_HOME"`
+5. Expected value: `<project-root>/.codex` (or Linux-equivalent path in WSL/Unix mode).
+
 Development run:
 
 ```bash
@@ -183,6 +195,36 @@ chmod +x ./launchers/codex-session-isolator.sh
 ./launchers/codex-session-isolator.sh /path/to/my-app/MyApp.code-workspace
 ./launchers/codex-session-isolator.sh /path/to/my-app
 ```
+
+## Cleanup/Uninstall
+
+To remove generated launcher artifacts safely from a project:
+
+1. Delete launcher file from project root:
+   - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+2. Delete `.vsc_launcher/` (config/logs/backups).
+3. Remove managed `.gitignore` block:
+   - from `# >>> codex-session-isolator >>>`
+   - to `# <<< codex-session-isolator <<<`
+4. Optional: remove extension-managed settings keys:
+   - `chatgpt.runCodexInWindowsSubsystemForLinux`
+   - `chatgpt.openOnStartup`
+   - `chatgpt.cliExecutable` (only if set to `.vsc_launcher/codex-wsl-wrapper.sh`)
+5. Optional: delete project `.codex/` only if you do not need that project's isolated session state/history.
+
+## Troubleshooting
+
+- Wizard fails immediately:
+  ensure PowerShell is installed (`pwsh` or `powershell.exe`), then retry.
+- Reopen fails with launcher missing:
+  run Initialize first (or one-click setup command if your version provides it).
+- WSL options are missing:
+  verify `wsl --status`; if unavailable, use local mode or install/configure WSL.
+- Permission/write errors:
+  check folder write access. Backup copies for managed overwrites are under `.vsc_launcher/backups/`.
+- Where to inspect logs:
+  1. VS Code Output channel: `Codex Session Isolator`
+  2. Project logs: `.vsc_launcher/logs`
 
 ## Documentation
 
