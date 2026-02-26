@@ -28,6 +28,7 @@ When launched through generated launcher:
 
 - `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
+- `Codex Session Isolator: Dry Run Initialize`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
@@ -60,6 +61,42 @@ Default wizard answers on Windows + WSL are context-aware:
 - Ignore Codex chat sessions in gitignore: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
+
+## Files this extension modifies
+
+Initialization updates only project-local files in the selected target root.
+
+- `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+- `.vsc_launcher/config.json` + `.vsc_launcher/runner.ps1` (Windows)
+- `.vsc_launcher/config.env` (Linux/macOS)
+- `.vsc_launcher/wizard.defaults.json`
+- `.vsc_launcher/logs/wizard-<timestamp>-<pid>.log`
+- `.vscode/settings.json`
+- selected `*.code-workspace` settings (when launch mode is workspace)
+- managed Codex Session Isolator block in `.gitignore`
+
+Before overwrite or legacy cleanup, backups are written under:
+
+- `<project>/.vsc_launcher/backups/<timestamp-pid>/`
+
+To preview exact create/modify/remove operations and `CODEX_HOME`, run:
+
+- `Codex Session Isolator: Dry Run Initialize`
+
+## Cleanup/Uninstall steps
+
+To remove generated artifacts from one project:
+
+1. Delete `vsc_launcher.bat` or `vsc_launcher.sh`.
+2. Delete `.vsc_launcher/`.
+3. Remove the managed block between
+   `# >>> codex-session-isolator >>>` and
+   `# <<< codex-session-isolator <<<` from `.gitignore`.
+4. Optionally remove extension-managed keys from `.vscode/settings.json` and workspace file settings:
+   - `chatgpt.runCodexInWindowsSubsystemForLinux`
+   - `chatgpt.openOnStartup`
+   - `chatgpt.cliExecutable` (only if it points to `.vsc_launcher/codex-wsl-wrapper.sh`)
+5. Optionally delete project `.codex/` if you do not need isolated session state/history.
 
 ## Requirements
 

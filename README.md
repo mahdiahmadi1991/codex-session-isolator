@@ -128,6 +128,7 @@ The extension adds in-editor commands for wizard UX and launcher operations:
 
 - `Codex Session Isolator: Setup (Initialize & Reopen)`
 - `Codex Session Isolator: Initialize Launcher`
+- `Codex Session Isolator: Dry Run Initialize`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
@@ -225,6 +226,44 @@ Manual reopen checks (VS Code extension on macOS/Linux):
 - Extension initialization requires trusted workspace and explicit confirmation by default.
 - Marketplace CI generates VSIX checksum files for verification.
 - Security CI workflow runs dependency review, secret scan, script syntax validation, npm audit, and CodeQL analysis.
+
+## Files this extension modifies
+
+When you run extension initialization, changes stay inside the selected project root:
+
+- `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+- `.vsc_launcher/config.json` + `.vsc_launcher/runner.ps1` (Windows)
+- `.vsc_launcher/config.env` (Linux/macOS)
+- `.vsc_launcher/wizard.defaults.json`
+- `.vsc_launcher/logs/wizard-<timestamp>-<pid>.log`
+- `.vscode/settings.json`
+- selected `*.code-workspace` settings (workspace launch mode)
+- managed Codex Session Isolator block in `.gitignore`
+- legacy cleanup when present:
+  - `vsc_launcher.ps1`
+  - `vsc_launcher.config.json`
+  - `.vsc_launcher_logs/`
+
+Before overwrite/remove, wizard backups are created under:
+
+- `<project>/.vsc_launcher/backups/<timestamp-pid>/`
+
+Use `Codex Session Isolator: Dry Run Initialize` to preview the exact create/modify/remove plan and resolved `CODEX_HOME` without applying changes.
+
+## Cleanup/Uninstall steps
+
+To clean one project and remove generated artifacts:
+
+1. Delete `vsc_launcher.bat` or `vsc_launcher.sh`.
+2. Delete `.vsc_launcher/`.
+3. Remove the managed block between
+   `# >>> codex-session-isolator >>>` and
+   `# <<< codex-session-isolator <<<` in `.gitignore`.
+4. Optionally remove these keys from `.vscode/settings.json` and workspace settings if no longer desired:
+   - `chatgpt.runCodexInWindowsSubsystemForLinux`
+   - `chatgpt.openOnStartup`
+   - `chatgpt.cliExecutable` (only when it points to `.vsc_launcher/codex-wsl-wrapper.sh`)
+5. Optionally remove project `.codex/` if you do not need isolated session state/history.
 
 ## Marketplace CI/CD
 
