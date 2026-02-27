@@ -19,6 +19,12 @@ When launched through this tool, `CODEX_HOME` is set to:
 - the folder itself (if target is a directory)
 - the parent directory (if target is any file)
 
+Launch target resolution:
+
+- If target is a folder and `codex-session-isolator.code-workspace` exists, launcher opens that workspace file.
+- Otherwise, if target folder has exactly one `*.code-workspace` file, launcher opens that workspace file.
+- Otherwise, launcher opens the folder target directly.
+
 This isolates Codex state per project without changing global/default behavior.
 
 Practical effect:
@@ -95,23 +101,28 @@ Note: direct wizard execution requires PowerShell (`powershell` or `pwsh`).
 The wizard asks for:
 
 - Remote WSL mode
-- whether Codex should run in WSL for this project
+- whether Codex should run in WSL for this project (only when Remote WSL mode is `Yes`)
+- whether to create an extra Windows Desktop shortcut copy (only for WSL-hosted targets)
 - whether Codex chat sessions should be git-ignored
 
 Wizard defaults:
 
-- If exactly one workspace file exists in target path, it is selected automatically.
+- If exactly one workspace file exists in target root, it is selected automatically.
 - If no workspace file exists, folder target is used.
-- It asks workspace selection only when more than one workspace file is found.
+- It asks workspace selection only when more than one workspace file is found in target root.
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
-- First-run defaults on Windows (when WSL is available) are:
-  - `Launch VS Code in Remote WSL mode = Yes`
+- First-run defaults on Windows (when WSL is available) are context-aware:
+  - local Windows path: `Launch VS Code in Remote WSL mode = No`
+  - WSL UNC path (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project = Yes`
   - WSL distro default = your Windows default distro (`wsl --status`)
   - `Ignore Codex chat sessions in gitignore = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
+- For WSL-hosted targets (WSL UNC from Windows, or wizard executed inside WSL), wizard can generate a Windows shortcut named `Open <project>.lnk`.
+- Wizard asks for shortcut location when enabled: `Project root`, `Desktop`, `Start Menu`, or `Custom path`.
+- Shortcut execution now uses direct `wsl.exe` arguments (no encoded PowerShell command), reducing antivirus false-positive risk.
 - Wizard always writes:
   - `chatgpt.openOnStartup=true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux=<selected>`
@@ -182,6 +193,7 @@ Recommended:
 1. Keep `Launch VS Code in Remote WSL mode` on `Yes` (default).
 2. Keep `Set Codex to run in WSL` on `Yes` (default).
 3. Reopen with generated `vsc_launcher.bat`.
+4. Optional: enable shortcut generation and choose Desktop/Start menu/custom location in wizard.
 
 Note:
 
@@ -202,6 +214,7 @@ To remove generated launcher artifacts safely from a project:
 
 1. Delete launcher file from project root:
    - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+   - `Open <project>.lnk` (only when generated for WSL-hosted target)
 2. Delete `.vsc_launcher/` (config/logs/backups).
 3. Remove managed `.gitignore` block:
    - from `# >>> codex-session-isolator >>>`

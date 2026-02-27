@@ -300,7 +300,10 @@ try {
   $canonicalLauncher = Join-Path $repoRoot "launchers\CodexSessionIsolator.ps1"
   $outFolder = Invoke-ExternalPowerShellScript -ScriptPath $canonicalLauncher -Arguments @("-TargetPath", $case1, "-DryRun")
   Assert-True ($outFolder.ExitCode -eq 0) "Folder dry-run failed."
-  Assert-Contains $outFolder.Output "[dry-run] Local CODEX_HOME: $case1\.codex" "Folder dry-run CODEX_HOME mismatch."
+  Assert-Contains $outFolder.Output "[dry-run] Local launch target:" "Folder dry-run should report local launch target."
+  Assert-Contains $outFolder.Output "\case1-canonical\sample.code-workspace" "Folder dry-run should prefer workspace launch target."
+  Assert-Contains $outFolder.Output "[dry-run] Local CODEX_HOME:" "Folder dry-run should report local CODEX_HOME."
+  Assert-Contains $outFolder.Output "\case1-canonical\.codex" "Folder dry-run CODEX_HOME mismatch."
 
   $outWorkspace = Invoke-ExternalPowerShellScript -ScriptPath $canonicalLauncher -Arguments @("-TargetPath", $ws1, "-DryRun")
   Assert-True ($outWorkspace.ExitCode -eq 0) "Workspace dry-run failed."
@@ -315,6 +318,7 @@ try {
   Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
 
   $launcher2 = Join-Path $case2 "vsc_launcher.bat"
+  $wslBridge2 = @(Get-ChildItem -LiteralPath $case2 -Filter "Open *.lnk" -File -ErrorAction SilentlyContinue)
   $meta2 = Join-Path $case2 ".vsc_launcher"
   $runner2 = Join-Path $meta2 "runner.ps1"
   $config2 = Join-Path $meta2 "config.json"
@@ -323,6 +327,7 @@ try {
   $gitignore2 = Join-Path $case2 ".gitignore"
 
   Assert-True (Test-Path -LiteralPath $launcher2 -PathType Leaf) "Generated launcher not found."
+  Assert-True ($wslBridge2.Count -eq 0) "WSL shortcut should not be generated for local Windows targets."
   Assert-True (Test-Path -LiteralPath $runner2 -PathType Leaf) "Generated runner not found."
   Assert-True (Test-Path -LiteralPath $config2 -PathType Leaf) "Generated config not found."
   Assert-HiddenOnWindows -Path $meta2 -Message "Expected metadata directory to be hidden on Windows."
@@ -595,11 +600,23 @@ try {
         Set-Content -LiteralPath $case6WorkspacePath -Value '{"folders":[{"path":"."}]}' -NoNewline
 
         Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
-        # Accept wizard defaults (include extra empty line for optional distro prompt when multiple distros exist).
-        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case6UncRoot -Responses @("", "", "", "") -DebugMode -UseTargetFlag
+        $case6Distros = @(
+          wsl.exe -l -q 2>$null |
+          ForEach-Object { ($_ -replace [string][char]0, "").Trim() } |
+          Where-Object { $_ -and $_ -notmatch '^docker-desktop(-data)?$' }
+        )
+        $case6Responses = if ($case6Distros.Count -gt 1) {
+          # remoteWsl, distroSelection, codexRunInWsl, createShortcut, locationSelection, ignoreSessions
+          @("", "", "", "y", "", "")
+        } else {
+          # remoteWsl, codexRunInWsl, createShortcut, locationSelection, ignoreSessions
+          @("", "", "y", "", "")
+        }
+        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case6UncRoot -Responses $case6Responses -DebugMode -UseTargetFlag
 
         $case6Runner = Join-Path $case6UncRoot ".vsc_launcher\runner.ps1"
         $case6Config = Join-Path $case6UncRoot ".vsc_launcher\config.json"
+        $case6BridgeCandidates = @(Get-ChildItem -LiteralPath $case6UncRoot -Filter "Open *.lnk" -File -ErrorAction SilentlyContinue)
         $case6Wrapper = Join-Path $case6UncRoot ".vsc_launcher\codex-wsl-wrapper.sh"
         $case6ProfileSettings = Join-Path $case6UncRoot ".vsc_launcher\vscode-user-data\User\settings.json"
         $case6LogsDir = Join-Path $case6UncRoot ".vsc_launcher\logs"
@@ -607,6 +624,7 @@ try {
 
         Assert-True (Test-Path -LiteralPath $case6Runner -PathType Leaf) "Case 6 runner not generated."
         Assert-True (Test-Path -LiteralPath $case6Config -PathType Leaf) "Case 6 config not generated."
+        Assert-True ($case6BridgeCandidates.Count -eq 1) "Case 6 Windows WSL shortcut not generated."
         Assert-True (Test-Path -LiteralPath $case6Gitignore -PathType Leaf) "Case 6 .gitignore not generated."
 
         $case6ConfigDefaults = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
@@ -615,6 +633,7 @@ try {
         Assert-True ($case6ConfigDefaults.wslDistro -eq $case6Distro) "Case 6 default distro should match Windows default distro."
 
         $case6GitignoreText = Get-Content -LiteralPath $case6Gitignore -Raw
+        Assert-Contains $case6GitignoreText $case6BridgeCandidates[0].Name "Case 6 gitignore missing Windows WSL shortcut entry."
         Assert-Contains $case6GitignoreText ".codex/*" "Case 6 default should keep sessions tracked (.codex/* strategy)."
         Assert-Contains $case6GitignoreText "!.codex/sessions/**" "Case 6 default should keep sessions unignored."
         Assert-Contains $case6GitignoreText "!.codex/archived_sessions/**" "Case 6 default should keep archived sessions unignored."

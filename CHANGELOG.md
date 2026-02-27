@@ -26,6 +26,23 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - README and usage docs now include extension-based workflow.
+- Fixed Windows canonical launcher WSL path execution to escape Bash command substitutions correctly in PowerShell here-strings (prevents `printf` PowerShell resolution error for `\\wsl$...` targets).
+- Fixed Windows canonical launcher Remote WSL invocation to execute a temporary UTF-8 bash script file instead of inline `bash -lc` multiline text, avoiding quoting/truncation syntax errors.
+- Fixed Windows canonical launcher temp-script path conversion for WSL execution by using deterministic Windows->Linux path normalization (`/mnt/<drive>/...`) and process-based invocation output capture.
+- Canonical launchers now prefer opening a workspace file when target is a folder: `codex-session-isolator.code-workspace` first, otherwise the single `*.code-workspace` file if exactly one exists.
+- Wizard now supports interactive Windows shortcut generation for WSL-hosted targets: `Create Windows shortcut for double-click launch?` with location choices (`Project root`, `Desktop`, `Start Menu`, `Custom path`) and short filename `Open <project>.lnk`.
+- WSL shortcut execution was changed to direct `wsl.exe` arguments (without encoded PowerShell command) to reduce antivirus false positives.
+- Fixed WSL shortcut reliability for WSL-hosted generation by writing Unix launcher artifacts with LF line endings (prevents `/usr/bin/env: 'bash\r'` failures on shortcut execution).
+- Improved WSL shortcut icon detection in WSL-hosted generation to prefer VS Code stable/insiders executables before falling back to `wsl.exe`.
+- Extension now asks target scope at operation start (`Current project` vs `Another project`); when `Another project` is selected, setup completes with a report and does not reopen/close current VS Code window.
+- Wizard defaults now keep `useRemoteWsl` and `codexRunInWsl` as `null` when those prompts are not shown (for example inside WSL), preventing incorrect `false` defaults from being persisted.
+- Workspace discovery for launch target selection is now limited to `.code-workspace` files in project root (nested backup files are ignored).
+- Extension project picker dialogs now default to the user's home directory when selecting target project folders.
+- Extension project picker on Remote WSL now prefers canonical `/home/<user>` as default location.
+- WSL shortcut generation now uses absolute `wsl.exe` path, sets `WorkingDirectory`, and passes Linux user (`-u <user>`) inferred from project path for more reliable double-click launches.
+- WSL Windows shortcut target now routes through `cmd.exe /c` to avoid environments where `.lnk` with direct `wsl.exe` target no-ops.
+- Extension `Open Logs` action now opens the latest launcher log file directly in the editor (cross-platform reliable behavior).
+- Extension `Open Config` action now resolves both Windows (`.vsc_launcher/config.json`) and Unix (`.vsc_launcher/config.env`) launcher configs.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
 - Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
 - Extension metadata and README content were enriched for Marketplace readiness.

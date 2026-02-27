@@ -12,6 +12,9 @@ test("normal flow resolves known prompts with prepared answers", () => {
     remoteWsl: "y",
     wslDistroSelection: "1",
     codexRunInWsl: "n",
+    createWindowsShortcut: "y",
+    windowsShortcutLocationSelection: "4",
+    windowsShortcutCustomPath: "C:\\Users\\Me\\Desktop",
     ignoreSessions: "y"
   };
 
@@ -50,16 +53,25 @@ test("normal flow resolves known prompts with prepared answers", () => {
 
   const actions4 = consumeWizardOutputChunk(
     state,
-    "\nSet Codex to run in WSL for this project? [Y/n]:\nIgnore Codex chat sessions in gitignore? [y/N]:",
+    "\nSet Codex to run in WSL for this project? [Y/n]:\nCreate Windows shortcut for double-click launch? [y/N]:\nSelect Windows shortcut location:\n1. Project root\n2. Desktop\n3. Start Menu\n4. Custom path\nSelect [default: 1]:\nEnter Windows shortcut directory path [C:\\Users\\Me\\Desktop]:\nIgnore Codex chat sessions in gitignore? [y/N]:",
     answers
   );
-  assert.equal(actions4.length, 2);
+  assert.equal(actions4.length, 5);
   assert.equal(actions4[0].kind, "answer");
   assert.equal(actions4[0].promptId, "codexRunInWsl");
   assert.equal(actions4[0].answer, "n");
   assert.equal(actions4[1].kind, "answer");
-  assert.equal(actions4[1].promptId, "ignoreSessions");
+  assert.equal(actions4[1].promptId, "createWindowsShortcut");
   assert.equal(actions4[1].answer, "y");
+  assert.equal(actions4[2].kind, "answer");
+  assert.equal(actions4[2].promptId, "windowsShortcutLocationSelection");
+  assert.equal(actions4[2].answer, "4");
+  assert.equal(actions4[3].kind, "answer");
+  assert.equal(actions4[3].promptId, "windowsShortcutCustomPath");
+  assert.equal(actions4[3].answer, "C:\\Users\\Me\\Desktop");
+  assert.equal(actions4[4].kind, "answer");
+  assert.equal(actions4[4].promptId, "ignoreSessions");
+  assert.equal(actions4[4].answer, "y");
 });
 
 test("unknown extra prompt fails fast", () => {

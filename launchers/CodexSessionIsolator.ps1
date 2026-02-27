@@ -53,6 +53,65 @@ function Parse-WslUncPath {
   return $null
 }
 
+function Convert-WindowsPathToLinuxPath {
+  param(
+    [string]$InputPath,
+    [string]$Distro
+  )
+
+  if ($InputPath -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]([^\\]+)[\\](.*)$') {
+    $distroInPath = $Matches[1]
+    if ([string]::IsNullOrWhiteSpace($Distro) -or $distroInPath -ieq $Distro) {
+      $rest = $Matches[2] -replace '\\', '/'
+      return "/$rest"
+    }
+    throw "WSL path '$InputPath' belongs to distro '$distroInPath', but launcher is targeting distro '$Distro'."
+  }
+
+  if ($InputPath -match '^/') {
+    return $InputPath
+  }
+
+  if ($InputPath -match '^[A-Za-z]:[\\/]') {
+    $drive = $InputPath.Substring(0, 1).ToLowerInvariant()
+    $rest = $InputPath.Substring(2) -replace '\\', '/'
+    if (-not $rest.StartsWith('/')) {
+      $rest = '/' + $rest
+    }
+    return "/mnt/$drive$rest"
+  }
+
+  $normalized = $InputPath -replace '\\', '/'
+  $wslArgs = @()
+  if ([string]::IsNullOrWhiteSpace($Distro)) {
+    $wslArgs = @("--", "wslpath", "-a", "-u", $normalized)
+  } else {
+    $wslArgs = @("-d", $Distro, "--", "wslpath", "-a", "-u", $normalized)
+  }
+  $convertedRaw = & wsl.exe @wslArgs 2>&1
+  $converted = ($convertedRaw | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
+    throw "Failed to convert path '$InputPath' to Linux path. wslpath: $converted"
+  }
+  return $converted
+}
+
+function Resolve-LaunchTargetForDirectory {
+  param([string]$DirectoryPath)
+
+  $preferredWorkspace = Join-Path $DirectoryPath "codex-session-isolator.code-workspace"
+  if (Test-Path -LiteralPath $preferredWorkspace -PathType Leaf) {
+    return $preferredWorkspace
+  }
+
+  $workspaceFiles = @(Get-ChildItem -LiteralPath $DirectoryPath -Filter "*.code-workspace" -File -ErrorAction SilentlyContinue | Sort-Object -Property Name)
+  if ($workspaceFiles.Count -eq 1) {
+    return $workspaceFiles[0].FullName
+  }
+
+  return $DirectoryPath
+}
+
 function Start-LocalCode {
   param([string]$InputPath)
 
@@ -64,8 +123,8 @@ function Start-LocalCode {
   $item = Get-Item -LiteralPath $resolvedPath -Force
 
   if ($item.PSIsContainer) {
-    $launchTarget = $resolvedPath
     $baseDir = $resolvedPath
+    $launchTarget = Resolve-LaunchTargetForDirectory -DirectoryPath $baseDir
   } else {
     $launchTarget = $resolvedPath
     $baseDir = Split-Path -Parent $resolvedPath
@@ -130,43 +189,103 @@ function Start-WslCode {
   $dryRunLiteral = if ($DryRun) { "1" } else { "0" }
 
   $bashScript = @"
-set -e
+set -euo pipefail
 target_b64='$targetB64'
 dry_run='$dryRunLiteral'
-target="\$(printf '%s' "\$target_b64" | base64 -d)"
-
-if [ -d "\$target" ]; then
-  launch_target="\$target"
-  base_dir="\$target"
-elif [ -f "\$target" ]; then
-  launch_target="\$target"
-  base_dir="\$(dirname "\$target")"
-else
-  echo "Path not found: \$target"
+target=`$(printf '%s' "`$target_b64" | base64 -d)
+if [ -z "`$target" ]; then
+  echo "Resolved target is empty."
   exit 2
 fi
 
-codex_home="\$base_dir/.codex"
-mkdir -p "\$codex_home"
-export CODEX_HOME="\$codex_home"
+if [ -d "`$target" ]; then
+  base_dir="`$target"
+  launch_target="`$target"
+  preferred_workspace="`$base_dir/codex-session-isolator.code-workspace"
+  if [ -f "`$preferred_workspace" ]; then
+    launch_target="`$preferred_workspace"
+  else
+    shopt -s nullglob
+    workspace_files=("`$base_dir"/*.code-workspace)
+    shopt -u nullglob
+    if [ "`${#workspace_files[@]}" -eq 1 ]; then
+      launch_target="`${workspace_files[0]}"
+    fi
+  fi
+elif [ -f "`$target" ]; then
+  launch_target="`$target"
+  base_dir=`$(dirname "`$target")
+else
+  echo "Path not found: `$target"
+  exit 2
+fi
 
-if [ "\$dry_run" = "1" ]; then
-  echo "[dry-run] WSL launch target: \$launch_target"
-  echo "[dry-run] WSL CODEX_HOME: \$codex_home"
+codex_home="`$base_dir/.codex"
+mkdir -p "`$codex_home"
+export CODEX_HOME="`$codex_home"
+
+if [ "`$dry_run" = "1" ]; then
+  echo "[dry-run] WSL launch target: `$launch_target"
+  echo "[dry-run] WSL CODEX_HOME: `$codex_home"
   exit 0
 fi
 
 command -v code >/dev/null 2>&1 || { echo "VS Code command 'code' not found in WSL PATH."; exit 127; }
-code --new-window "\$launch_target"
+code --new-window "`$launch_target"
 "@
+  $bashScript = ($bashScript -replace "`r`n", "`n") -replace "`r", "`n"
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  $tempScriptWindows = Join-Path $env:TEMP ("csi-canonical-wsl-" + [Guid]::NewGuid().ToString("N") + ".sh")
+  [System.IO.File]::WriteAllText($tempScriptWindows, $bashScript, $utf8NoBom)
 
   if ([string]::IsNullOrWhiteSpace($Distro)) {
     Exit-WithError "No WSL distro detected. Install WSL or pass a valid WSL path." 4
   }
 
-  & wsl.exe -d $Distro -- bash -lc $bashScript
-  if ($LASTEXITCODE -ne 0) {
-    Exit-WithError "Failed to launch VS Code in WSL distro '$Distro'." 5
+  try {
+    $tempScriptLinux = Convert-WindowsPathToLinuxPath -InputPath $tempScriptWindows -Distro $Distro
+    if ([string]::IsNullOrWhiteSpace($tempScriptLinux)) {
+      Exit-WithError "Failed to convert temporary WSL script path for distro '$Distro'." 5
+    }
+
+    $outPath = Join-Path $env:TEMP ("csi-canonical-wsl-" + [Guid]::NewGuid().ToString("N") + ".out")
+    $errPath = Join-Path $env:TEMP ("csi-canonical-wsl-" + [Guid]::NewGuid().ToString("N") + ".err")
+    $remoteExitCode = 0
+    $remoteOutput = ""
+
+    try {
+      $process = Start-Process `
+        -FilePath "wsl.exe" `
+        -ArgumentList @("-d", $Distro, "--", "bash", $tempScriptLinux) `
+        -NoNewWindow `
+        -Wait `
+        -PassThru `
+        -RedirectStandardOutput $outPath `
+        -RedirectStandardError $errPath
+
+      $remoteExitCode = $process.ExitCode
+      $stdoutText = if (Test-Path -LiteralPath $outPath -PathType Leaf) { Get-Content -LiteralPath $outPath -Raw } else { "" }
+      $stderrText = if (Test-Path -LiteralPath $errPath -PathType Leaf) { Get-Content -LiteralPath $errPath -Raw } else { "" }
+      $remoteOutput = ($stdoutText + "`n" + $stderrText).Trim()
+      if (-not [string]::IsNullOrWhiteSpace($remoteOutput)) {
+        Write-Host $remoteOutput
+      }
+    } finally {
+      if (Test-Path -LiteralPath $outPath -PathType Leaf) {
+        Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
+      }
+      if (Test-Path -LiteralPath $errPath -PathType Leaf) {
+        Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+
+    if ($remoteExitCode -ne 0) {
+      Exit-WithError "Failed to launch VS Code in WSL distro '$Distro'." 5
+    }
+  } finally {
+    if (Test-Path -LiteralPath $tempScriptWindows -PathType Leaf) {
+      Remove-Item -LiteralPath $tempScriptWindows -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 

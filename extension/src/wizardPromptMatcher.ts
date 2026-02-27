@@ -3,6 +3,9 @@ export type WizardPromptId =
   | "remoteWsl"
   | "wslDistroSelection"
   | "codexRunInWsl"
+  | "createWindowsShortcut"
+  | "windowsShortcutLocationSelection"
+  | "windowsShortcutCustomPath"
   | "ignoreSessions";
 
 export type WizardPromptAnswers = Partial<Record<WizardPromptId, string>>;
@@ -166,6 +169,14 @@ function detectPrompt(
     return { kind: "known", promptId: "codexRunInWsl" };
   }
 
+  if (isKnownPrompt(normalized, "create windows shortcut for double-click launch?")) {
+    return { kind: "known", promptId: "createWindowsShortcut" };
+  }
+
+  if (isKnownTextPrompt(normalized, "enter windows shortcut directory path")) {
+    return { kind: "known", promptId: "windowsShortcutCustomPath" };
+  }
+
   if (isKnownPrompt(normalized, "ignore codex chat sessions in gitignore?")) {
     return { kind: "known", promptId: "ignoreSessions" };
   }
@@ -204,6 +215,9 @@ function detectSelectionPromptFromContext(recentLines: string[]): WizardPromptId
     if (normalized.includes("select wsl distro:")) {
       return "wslDistroSelection";
     }
+    if (normalized.includes("select windows shortcut location:")) {
+      return "windowsShortcutLocationSelection";
+    }
     if (normalized.includes("multiple workspace files found. select one:")) {
       return "workspaceSelection";
     }
@@ -216,11 +230,18 @@ function isKnownPrompt(normalizedLine: string, promptPrefix: string): boolean {
   return normalizedLine.startsWith(promptPrefix) && YES_NO_PATTERN.test(normalizedLine);
 }
 
+function isKnownTextPrompt(normalizedLine: string, promptPrefix: string): boolean {
+  return normalizedLine.startsWith(promptPrefix) && normalizedLine.endsWith(":");
+}
+
 function isKnownContextLine(normalizedLine: string): boolean {
   if (normalizedLine.includes("multiple workspace files found. select one:")) {
     return true;
   }
   if (normalizedLine.includes("select wsl distro:")) {
+    return true;
+  }
+  if (normalizedLine.includes("select windows shortcut location:")) {
     return true;
   }
   if (/^\d+\.\s+/.test(normalizedLine)) {

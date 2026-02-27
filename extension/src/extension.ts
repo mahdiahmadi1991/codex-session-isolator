@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as os from "os";
 import * as fs from "fs/promises";
 import { existsSync, Dirent } from "fs";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
@@ -12,11 +13,17 @@ import {
 import {
   detectPowerShellCommand as detectPowerShellCommandWithProbe
 } from "./powerShellDetection";
+import {
+  getRemoteWslDefaultDecision
+} from "./wizardContext";
 
 type WizardDefaults = {
   useRemoteWsl?: boolean;
   codexRunInWsl?: boolean;
   ignoreSessions?: boolean;
+  windowsShortcutEnabled?: boolean;
+  windowsShortcutLocation?: "projectRoot" | "desktop" | "startMenu" | "custom";
+  windowsShortcutCustomPath?: string;
 };
 
 type ProcessResult = {
@@ -119,17 +126,24 @@ async function initializeLauncherCommand(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
 ): Promise<void> {
-  const targetRoot = await pickTargetRoot();
-  if (!targetRoot) {
+  const targetSelection = await pickOperationTarget();
+  if (!targetSelection) {
     return;
   }
 
-  await initializeLauncherForTarget(
+  const initialized = await initializeLauncherForTarget(
     context,
     output,
-    targetRoot,
-    { reopenAfterInitialize: false, showPostInitializeActions: true }
+    targetSelection.targetRoot,
+    {
+      reopenAfterInitialize: false,
+      showPostInitializeActions: targetSelection.scope === "current"
+    }
   );
+
+  if (initialized && targetSelection.scope === "other") {
+    await showExternalTargetCompletionReport(targetSelection.targetRoot);
+  }
 }
 
 async function setupLauncherCommand(
@@ -137,17 +151,24 @@ async function setupLauncherCommand(
   output: vscode.OutputChannel,
   targetRoot?: string
 ): Promise<void> {
-  const resolvedTargetRoot = targetRoot ?? await pickTargetRoot();
-  if (!resolvedTargetRoot) {
+  const targetSelection = targetRoot
+    ? { targetRoot, scope: "current" as const }
+    : await pickOperationTarget();
+  if (!targetSelection) {
     return;
   }
 
-  await initializeLauncherForTarget(
+  const shouldReopen = targetSelection.scope === "current";
+  const initialized = await initializeLauncherForTarget(
     context,
     output,
-    resolvedTargetRoot,
-    { reopenAfterInitialize: true, showPostInitializeActions: false }
+    targetSelection.targetRoot,
+    { reopenAfterInitialize: shouldReopen, showPostInitializeActions: false }
   );
+
+  if (initialized && targetSelection.scope === "other") {
+    await showExternalTargetCompletionReport(targetSelection.targetRoot);
+  }
 }
 
 async function initializeLauncherForTarget(
@@ -372,7 +393,7 @@ function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.
 }
 
 function formatPromptAnswerForLog(promptId: WizardPromptId, answer: string): string {
-  if (promptId === "workspaceSelection" || promptId === "wslDistroSelection") {
+  if (promptId === "workspaceSelection" || promptId === "wslDistroSelection" || promptId === "windowsShortcutLocationSelection") {
     return `option_${answer}`;
   }
 
@@ -391,7 +412,7 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
   const defaults = await readWizardDefaults(targetRoot);
   const responses: WizardPromptAnswers = {};
 
-  const workspaceFiles = await findWorkspaceFiles(targetRoot, 3);
+  const workspaceFiles = await findWorkspaceFiles(targetRoot);
   if (workspaceFiles.length > 1) {
     const selected = await promptWorkspaceSelection(targetRoot, workspaceFiles);
     if (selected === undefined) {
@@ -402,9 +423,15 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
 
   const wslAvailable = process.platform === "win32" && (await isWslAvailable());
   if (wslAvailable) {
+    const remoteDefaultDecision = getRemoteWslDefaultDecision({
+      targetPath: targetRoot,
+      platform: process.platform,
+      remoteName: vscode.env.remoteName,
+      storedDefault: defaults.useRemoteWsl
+    });
     const useRemoteWsl = await promptBoolean(
       "Launch VS Code in Remote WSL mode?",
-      defaults.useRemoteWsl ?? true
+      remoteDefaultDecision.defaultValue
     );
     if (useRemoteWsl === undefined) {
       return undefined;
@@ -430,14 +457,43 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
       }
     }
 
-    const codexRunInWsl = await promptBoolean(
-      "Set Codex to run in WSL for this project?",
-      defaults.codexRunInWsl ?? true
+    if (useRemoteWsl) {
+      const codexRunInWsl = await promptBoolean(
+        "Set Codex to run in WSL for this project?",
+        defaults.codexRunInWsl ?? true
+      );
+      if (codexRunInWsl === undefined) {
+        return undefined;
+      }
+      responses.codexRunInWsl = codexRunInWsl ? "y" : "n";
+    }
+  }
+
+  if (isWslShortcutTarget(targetRoot, process.platform)) {
+    const createShortcut = await promptBoolean(
+      "Create Windows shortcut for double-click launch?",
+      defaults.windowsShortcutEnabled ?? false
     );
-    if (codexRunInWsl === undefined) {
+    if (createShortcut === undefined) {
       return undefined;
     }
-    responses.codexRunInWsl = codexRunInWsl ? "y" : "n";
+    responses.createWindowsShortcut = createShortcut ? "y" : "n";
+
+    if (createShortcut) {
+      const selectedLocation = await promptWindowsShortcutLocation(defaults.windowsShortcutLocation ?? "projectRoot");
+      if (!selectedLocation) {
+        return undefined;
+      }
+      responses.windowsShortcutLocationSelection = String(selectedLocation.index + 1);
+
+      if (selectedLocation.key === "custom") {
+        const customPath = await promptWindowsShortcutCustomPath(defaults.windowsShortcutCustomPath ?? "");
+        if (customPath === undefined) {
+          return undefined;
+        }
+        responses.windowsShortcutCustomPath = customPath;
+      }
+    }
   }
 
   const ignoreSessions = await promptBoolean(
@@ -450,6 +506,19 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
   responses.ignoreSessions = ignoreSessions ? "y" : "n";
 
   return responses;
+}
+
+function isWslShortcutTarget(targetPath: string, platform: NodeJS.Platform): boolean {
+  if (!targetPath) {
+    return false;
+  }
+
+  if (platform === "win32") {
+    return /^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(targetPath);
+  }
+
+  const inWsl = !!process.env.WSL_DISTRO_NAME && !!process.env.WSL_INTEROP;
+  return inWsl && targetPath.startsWith("/");
 }
 
 async function promptWorkspaceSelection(root: string, workspaceFiles: string[]): Promise<number | undefined> {
@@ -482,6 +551,59 @@ async function promptWslDistroSelection(
   });
 
   return selected?.index;
+}
+
+async function promptWindowsShortcutLocation(
+  defaultLocation: "projectRoot" | "desktop" | "startMenu" | "custom"
+): Promise<{ key: "projectRoot" | "desktop" | "startMenu" | "custom"; index: number } | undefined> {
+  const ordered: Array<{ key: "projectRoot" | "desktop" | "startMenu" | "custom"; label: string }> = [
+    { key: "projectRoot", label: "Project root" },
+    { key: "desktop", label: "Desktop" },
+    { key: "startMenu", label: "Start Menu" },
+    { key: "custom", label: "Custom path" }
+  ];
+
+  let defaultIndex = ordered.findIndex((item) => item.key === defaultLocation);
+  if (defaultIndex < 0) {
+    defaultIndex = 0;
+  }
+
+  const picks = ordered.map((item, index) => ({
+    label: item.label,
+    description: index === defaultIndex ? "Default" : undefined,
+    key: item.key,
+    index
+  }));
+
+  const selected = await vscode.window.showQuickPick(picks, {
+    placeHolder: "Select Windows shortcut location",
+    canPickMany: false
+  });
+
+  if (!selected) {
+    return undefined;
+  }
+
+  return { key: selected.key, index: selected.index };
+}
+
+async function promptWindowsShortcutCustomPath(defaultPath: string): Promise<string | undefined> {
+  const value = await vscode.window.showInputBox({
+    prompt: "Enter Windows shortcut directory path",
+    value: defaultPath.trim(),
+    ignoreFocusOut: true
+  });
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  return trimmed;
 }
 
 async function promptBoolean(prompt: string, defaultValue: boolean): Promise<boolean | undefined> {
@@ -612,14 +734,156 @@ async function pickTargetRoot(): Promise<string | undefined> {
     }
   }
 
+  const defaultPickerUri = getProjectPickerDefaultUri();
   const chosen = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    title: "Select project root for Codex Session Isolator"
+    title: "Select project root for Codex Session Isolator",
+    defaultUri: defaultPickerUri
   });
 
   return chosen?.[0]?.fsPath;
+}
+
+async function pickCurrentWorkspaceRootOnly(): Promise<string | undefined> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 1) {
+    return folders[0].uri.fsPath;
+  }
+
+  if (folders.length > 1) {
+    const picks = folders.map((folder) => ({
+      label: folder.name,
+      description: folder.uri.fsPath,
+      path: folder.uri.fsPath
+    }));
+    const selected = await vscode.window.showQuickPick(picks, {
+      placeHolder: "Select current workspace root",
+      canPickMany: false
+    });
+    return selected?.path;
+  }
+
+  return undefined;
+}
+
+async function pickTargetRootFromDialog(): Promise<string | undefined> {
+  const defaultPickerUri = getProjectPickerDefaultUri();
+  const chosen = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    title: "Select target project root for Codex Session Isolator",
+    defaultUri: defaultPickerUri
+  });
+  return chosen?.[0]?.fsPath;
+}
+
+function getProjectPickerDefaultUri(): vscode.Uri {
+  const remoteName = (vscode.env.remoteName ?? "").toLowerCase();
+  const envHome = (process.env.HOME ?? "").trim();
+  const osHome = (os.homedir() ?? "").trim();
+  let username = "";
+  try {
+    username = (os.userInfo().username ?? "").trim();
+  } catch {
+    username = "";
+  }
+
+  // In Remote WSL, prefer canonical Linux home (/home/<user>) even when HOME/os.homedir is overridden.
+  if (remoteName === "wsl" || !!process.env.WSL_DISTRO_NAME) {
+    if (username) {
+      const canonicalWslHome = path.posix.join("/home", username);
+      if (existsSync(canonicalWslHome)) {
+        return vscode.Uri.file(canonicalWslHome);
+      }
+      return vscode.Uri.file(canonicalWslHome);
+    }
+
+    if (envHome && envHome.startsWith("/home/")) {
+      return vscode.Uri.file(envHome);
+    }
+    if (osHome && osHome.startsWith("/home/")) {
+      return vscode.Uri.file(osHome);
+    }
+    return vscode.Uri.file("/home");
+  }
+
+  if (envHome) {
+    return vscode.Uri.file(envHome);
+  }
+  if (osHome) {
+    return vscode.Uri.file(osHome);
+  }
+  return vscode.Uri.file(path.parse(process.cwd()).root || "/");
+}
+
+async function pickOperationTarget(): Promise<{ targetRoot: string; scope: "current" | "other" } | undefined> {
+  const currentRoot = await pickCurrentWorkspaceRootOnly();
+  if (!currentRoot) {
+    const fallback = await pickTargetRoot();
+    return fallback ? { targetRoot: fallback, scope: "other" } : undefined;
+  }
+
+  const selection = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Current project (recommended)",
+        description: currentRoot,
+        scope: "current" as const
+      },
+      {
+        label: "Another project",
+        description: "Select a different folder",
+        scope: "other" as const
+      }
+    ],
+    {
+      placeHolder: "Apply launcher setup to current project or another project?",
+      canPickMany: false
+    }
+  );
+
+  if (!selection) {
+    return undefined;
+  }
+
+  if (selection.scope === "current") {
+    return { targetRoot: currentRoot, scope: "current" };
+  }
+
+  const otherRoot = await pickTargetRootFromDialog();
+  if (!otherRoot) {
+    return undefined;
+  }
+
+  return { targetRoot: otherRoot, scope: "other" };
+}
+
+async function showExternalTargetCompletionReport(targetRoot: string): Promise<void> {
+  const launcherPath = process.platform === "win32"
+    ? path.join(targetRoot, "vsc_launcher.bat")
+    : path.join(targetRoot, "vsc_launcher.sh");
+  const logsPath = path.join(targetRoot, ".vsc_launcher", "logs");
+  const details =
+    `Target: ${targetRoot}\n` +
+    `Launcher: ${launcherPath}\n` +
+    `Logs: ${logsPath}\n\n` +
+    "Current VS Code window was not reopened because a different project was selected.";
+
+  const action = await vscode.window.showInformationMessage(
+    "Launcher setup completed for another project.",
+    { modal: true, detail: details },
+    "Open Logs",
+    "Open Config"
+  );
+
+  if (action === "Open Logs") {
+    await openLogsFolder(targetRoot);
+  } else if (action === "Open Config") {
+    await openConfigFile(targetRoot);
+  }
 }
 
 async function openLogsFolder(targetRoot: string): Promise<void> {
@@ -629,12 +893,48 @@ async function openLogsFolder(targetRoot: string): Promise<void> {
     return;
   }
 
-  await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(logsPath));
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(logsPath, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+
+  const logCandidates = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".log"))
+    .map((entry) => path.join(logsPath, entry.name));
+
+  if (logCandidates.length === 0) {
+    void vscode.window.showInformationMessage(`Launcher logs folder is empty: ${logsPath}`);
+    return;
+  }
+
+  let latestLogPath = logCandidates[0];
+  for (const candidate of logCandidates.slice(1)) {
+    try {
+      const [currentStat, candidateStat] = await Promise.all([
+        fs.stat(latestLogPath),
+        fs.stat(candidate)
+      ]);
+      if (candidateStat.mtimeMs > currentStat.mtimeMs) {
+        latestLogPath = candidate;
+      }
+    } catch {
+      // Keep current best candidate.
+    }
+  }
+
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(latestLogPath));
+  await vscode.window.showTextDocument(doc, { preview: false });
 }
 
 async function openConfigFile(targetRoot: string): Promise<void> {
-  const configPath = path.join(targetRoot, ".vsc_launcher", "config.json");
-  if (!existsSync(configPath)) {
+  const configCandidates = [
+    path.join(targetRoot, ".vsc_launcher", "config.json"),
+    path.join(targetRoot, ".vsc_launcher", "config.env")
+  ];
+  const configPath = configCandidates.find((candidate) => existsSync(candidate));
+  if (!configPath) {
     void vscode.window.showWarningMessage("Launcher config not found. Initialize launcher first.");
     return;
   }
@@ -832,29 +1132,16 @@ async function confirmLauncherChanges(targetRoot: string): Promise<boolean> {
   return action === "Continue";
 }
 
-async function findWorkspaceFiles(root: string, maxDepth: number): Promise<string[]> {
-  const results: string[] = [];
-
-  async function walk(dir: string, depth: number): Promise<void> {
-    let entries: Dirent[] = [];
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isFile() && entry.name.toLowerCase().endsWith(".code-workspace")) {
-        results.push(fullPath);
-      }
-
-      if (entry.isDirectory() && depth < maxDepth) {
-        await walk(fullPath, depth + 1);
-      }
-    }
+async function findWorkspaceFiles(root: string): Promise<string[]> {
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
   }
 
-  await walk(root, 0);
-  return results.sort();
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".code-workspace"))
+    .map((entry) => path.join(root, entry.name))
+    .sort();
 }
