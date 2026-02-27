@@ -300,8 +300,10 @@ try {
   $canonicalLauncher = Join-Path $repoRoot "launchers\CodexSessionIsolator.ps1"
   $outFolder = Invoke-ExternalPowerShellScript -ScriptPath $canonicalLauncher -Arguments @("-TargetPath", $case1, "-DryRun")
   Assert-True ($outFolder.ExitCode -eq 0) "Folder dry-run failed."
-  Assert-Contains $outFolder.Output "[dry-run] Local launch target: $ws1" "Folder dry-run should prefer workspace launch target."
-  Assert-Contains $outFolder.Output "[dry-run] Local CODEX_HOME: $case1\.codex" "Folder dry-run CODEX_HOME mismatch."
+  Assert-Contains $outFolder.Output "[dry-run] Local launch target:" "Folder dry-run should report local launch target."
+  Assert-Contains $outFolder.Output "\case1-canonical\sample.code-workspace" "Folder dry-run should prefer workspace launch target."
+  Assert-Contains $outFolder.Output "[dry-run] Local CODEX_HOME:" "Folder dry-run should report local CODEX_HOME."
+  Assert-Contains $outFolder.Output "\case1-canonical\.codex" "Folder dry-run CODEX_HOME mismatch."
 
   $outWorkspace = Invoke-ExternalPowerShellScript -ScriptPath $canonicalLauncher -Arguments @("-TargetPath", $ws1, "-DryRun")
   Assert-True ($outWorkspace.ExitCode -eq 0) "Workspace dry-run failed."
