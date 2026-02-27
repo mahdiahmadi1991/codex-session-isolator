@@ -211,7 +211,7 @@ jobs:
         run: |
           channel="${{ steps.channel.outputs.channel }}"
           version=$(node -p "require('./extension/package.json').version")
-          extension_id=$(node -p "const p=require('./extension/package.json'); `${p.publisher}.${p.name}`")
+          extension_id=$(node -p "const p=require('./extension/package.json'); p.publisher + '.' + p.name")
 
           payload=""
           for attempt in 1 2 3 4 5 6; do
