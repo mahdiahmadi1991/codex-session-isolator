@@ -75,21 +75,7 @@ jobs:
         shell: bash
         run: |
           channel="${{ steps.channel.outputs.channel }}"
-          CHANNEL="$channel" node - <<'NODE'
-          const fs = require("fs");
-          const path = "./package.json";
-          const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
-          const channel = process.env.CHANNEL;
-
-          if (channel === "pre-release") {
-            pkg.preview = true;
-          } else {
-            delete pkg.preview;
-          }
-
-          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
-          console.log(`manifest prepared for channel=${channel}, preview=${Boolean(pkg.preview)}`);
-          NODE
+          CHANNEL="$channel" node -e 'const fs=require("fs");const path="./package.json";const pkg=JSON.parse(fs.readFileSync(path,"utf8"));const channel=process.env.CHANNEL;if(channel==="pre-release"){pkg.preview=true;}else{delete pkg.preview;}fs.writeFileSync(path,`${JSON.stringify(pkg,null,2)}\n`);console.log(`manifest prepared for channel=${channel}, preview=${Boolean(pkg.preview)}`);'
 
       - name: Validate VSCE_PAT
         shell: bash
@@ -227,34 +213,7 @@ jobs:
             printf "%s" "$payload" > "$tmp_json"
 
             set +e
-            CHANNEL="$channel" VERSION="$version" TMP_JSON="$tmp_json" node - <<'NODE'
-            const fs = require("fs");
-            const channel = process.env.CHANNEL;
-            const version = process.env.VERSION;
-            const data = JSON.parse(fs.readFileSync(process.env.TMP_JSON, "utf8"));
-            const versions = Array.isArray(data.versions) ? data.versions : [];
-            const target = versions.find((v) => v.version === version);
-            if (!target) {
-              console.log(`Version ${version} not visible in Marketplace metadata yet.`);
-              process.exit(10);
-            }
-
-            const props = Array.isArray(target.properties) ? target.properties : [];
-            const preReleaseProp = props.find((p) => p.key === "Microsoft.VisualStudio.Code.PreRelease");
-            const isPreRelease = String(preReleaseProp?.value || "").toLowerCase() === "true";
-
-            if (channel === "pre-release" && !isPreRelease) {
-              console.error(`Channel mismatch: expected pre-release metadata for version ${version}.`);
-              process.exit(20);
-            }
-            if (channel === "stable" && isPreRelease) {
-              console.error(`Channel mismatch: expected stable metadata for version ${version}.`);
-              process.exit(20);
-            }
-
-            console.log(`Marketplace metadata verified for version ${version} on channel=${channel}.`);
-            process.exit(0);
-            NODE
+            CHANNEL="$channel" VERSION="$version" TMP_JSON="$tmp_json" node -e 'const fs=require("fs");const channel=process.env.CHANNEL;const version=process.env.VERSION;const data=JSON.parse(fs.readFileSync(process.env.TMP_JSON,"utf8"));const versions=Array.isArray(data.versions)?data.versions:[];const target=versions.find((v)=>v.version===version);if(!target){console.log(`Version ${version} not visible in Marketplace metadata yet.`);process.exit(10);}const props=Array.isArray(target.properties)?target.properties:[];const preReleaseProp=props.find((p)=>p.key==="Microsoft.VisualStudio.Code.PreRelease");const isPreRelease=String(preReleaseProp?.value||"").toLowerCase()==="true";if(channel==="pre-release"&&!isPreRelease){console.error(`Channel mismatch: expected pre-release metadata for version ${version}.`);process.exit(20);}if(channel==="stable"&&isPreRelease){console.error(`Channel mismatch: expected stable metadata for version ${version}.`);process.exit(20);}console.log(`Marketplace metadata verified for version ${version} on channel=${channel}.`);process.exit(0);'
             verify_code=$?
             set -e
 
