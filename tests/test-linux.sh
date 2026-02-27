@@ -53,7 +53,7 @@ printf '{}' > "$workspace"
 
 echo "[test] Folder dry-run"
 folder_output="$("$LAUNCHER" "$project_dir" --dry-run)"
-assert_contains "$folder_output" "[dry-run] Local launch target: $project_dir" "Folder launch target mismatch."
+assert_contains "$folder_output" "[dry-run] Local launch target: $workspace" "Folder launch target mismatch."
 assert_contains "$folder_output" "[dry-run] Local CODEX_HOME: $project_dir/.codex" "Folder CODEX_HOME mismatch."
 
 echo "[test] Workspace dry-run"

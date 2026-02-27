@@ -20,8 +20,19 @@ if [[ ! -e "$target_path" ]]; then
 fi
 
 if [[ -d "$target_path" ]]; then
-  launch_target="$(cd "$target_path" && pwd)"
-  base_dir="$launch_target"
+  base_dir="$(cd "$target_path" && pwd)"
+  launch_target="$base_dir"
+  preferred_workspace="$base_dir/codex-session-isolator.code-workspace"
+  if [[ -f "$preferred_workspace" ]]; then
+    launch_target="$preferred_workspace"
+  else
+    shopt -s nullglob
+    workspace_files=("$base_dir"/*.code-workspace)
+    shopt -u nullglob
+    if [[ "${#workspace_files[@]}" -eq 1 ]]; then
+      launch_target="${workspace_files[0]}"
+    fi
+  fi
 else
   base_dir="$(cd "$(dirname "$target_path")" && pwd)"
   launch_target="$base_dir/$(basename "$target_path")"

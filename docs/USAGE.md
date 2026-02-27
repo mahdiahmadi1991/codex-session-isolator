@@ -11,6 +11,12 @@ For the launched VS Code session, it sets:
 - If target is a folder: same folder
 - If target is a file: parent folder
 
+Launch target rules (VS Code open target):
+
+- If folder target contains `codex-session-isolator.code-workspace`, launcher opens that workspace file.
+- Otherwise, if folder target contains exactly one `*.code-workspace`, launcher opens that workspace file.
+- Otherwise, launcher opens the folder target.
+
 Outside this launcher, your default Codex behavior remains unchanged.
 
 Session visibility and credentials:
@@ -27,6 +33,11 @@ If you use the extension layer (`extension/`), run these commands from command p
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
+
+Extension target scope:
+
+- At operation start, extension asks whether to apply changes to `Current project` or `Another project`.
+- If `Another project` is selected during setup, extension does not reopen/close current VS Code window and shows a completion report for the selected target.
 
 Dev setup:
 
@@ -72,6 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\vsc-launcher-wizard.
 Wizard outputs (Windows):
 
 - `<target>\vsc_launcher.bat` (only executable launcher in target root)
+- `<selected-location>\Open <project>.lnk` (Windows shortcut; optional for WSL-hosted targets)
 - `<target>\.vsc_launcher\config.json`
 - `<target>\.vsc_launcher\wizard.defaults.json`
 - `<target>\.vsc_launcher\runner.ps1`
@@ -89,12 +101,19 @@ Wizard behavior:
   - `chatgpt.runCodexInWindowsSubsystemForLinux`
   - `chatgpt.openOnStartup=true`
 - If launch target is a `.code-workspace` file, it also updates the workspace `settings` block with the same values.
-- Auto-selects workspace when exactly one workspace file exists.
-- Asks workspace selection only when more than one workspace file exists.
+- Auto-selects workspace when exactly one workspace file exists in target root.
+- Asks workspace selection only when more than one workspace file exists in target root.
 - Creates `<project-name>.code-workspace` and uses it when no workspace file exists.
 - Skips WSL-related questions automatically when WSL is unavailable.
 - If target path is WSL UNC (`\\wsl$\...`) while WSL is unavailable, wizard falls back to current directory and generates local launcher/Codex settings.
+- For WSL-hosted targets (WSL UNC on Windows or wizard run inside WSL), wizard can generate a Windows shortcut `Open <project>.lnk` for double-click launch.
+- Shortcut location is user-selected in wizard:
+  - `Project root`
+  - `Desktop`
+  - `Start Menu`
+  - `Custom path`
 - Remembers previous answers and uses them as defaults for faster wizard runs.
+- When WSL-specific prompts are skipped (for example wizard running inside WSL), `wizard.defaults.json` stores `useRemoteWsl` / `codexRunInWsl` as `null` instead of forcing `false`.
 - First-run defaults on Windows (when WSL is available) are context-aware:
   - local Windows path: `Launch VS Code in Remote WSL mode = No`
   - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`

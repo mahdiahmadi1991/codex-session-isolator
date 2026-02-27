@@ -37,7 +37,11 @@ When launched through generated launcher:
 3. Setup launcher:
    - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
    - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then run `Codex Session Isolator: Reopen With Launcher`.
-4. Verify in terminal:
+4. At command start, choose target scope:
+   - `Current project (recommended)`
+   - `Another project`
+5. If `Another project` is selected, extension applies setup to that folder and shows completion report without reopening/closing current window.
+6. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
 
@@ -45,14 +49,16 @@ Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
 
-Default wizard answers on Windows + WSL:
+Default wizard answers on Windows + WSL are context-aware:
 
-- Remote WSL launch: `Yes`
-- Codex run in WSL: `Yes`
+- Local Windows path: Remote WSL launch `No`
+- WSL UNC path (`\\wsl$\...`): Remote WSL launch `Yes`
+- Codex run in WSL: prompted only when Remote WSL launch is `Yes` (default `Yes`)
 - Distro default: Windows default distro
 - Ignore Codex chat sessions in gitignore: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
+For WSL-hosted targets, wizard can generate a Windows shortcut `Open <project>.lnk` and lets you choose location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 
 ## Cleanup/Uninstall
 
@@ -60,6 +66,7 @@ To remove generated artifacts safely from one project:
 
 1. Delete launcher files from project root:
    - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+   - `Open <project>.lnk` (only for WSL-hosted targets when enabled)
 2. Delete `.vsc_launcher/` (includes logs/config/backups).
 3. Remove managed block in `.gitignore`:
    - from `# >>> codex-session-isolator >>>`

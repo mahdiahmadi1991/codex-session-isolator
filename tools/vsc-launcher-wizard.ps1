@@ -233,6 +233,419 @@ function Test-IsWslUncPath {
   return $Path -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]'
 }
 
+function Test-IsWslLinuxEnvironment {
+  if ($env:OS -eq "Windows_NT") {
+    return $false
+  }
+
+  if ([string]::IsNullOrWhiteSpace($env:WSL_DISTRO_NAME)) {
+    return $false
+  }
+
+  if ([string]::IsNullOrWhiteSpace($env:WSL_INTEROP)) {
+    return $false
+  }
+
+  return $true
+}
+
+function Escape-BashSingleQuoted {
+  param([string]$Value)
+
+  $separator = "'" + '"' + "'" + '"' + "'"
+  return [string]::Join($separator, ($Value -split "'"))
+}
+
+function Convert-LinuxPathToWindowsPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ""
+  }
+
+  if ($env:OS -eq "Windows_NT") {
+    return $Path
+  }
+
+  try {
+    $wslpathCommand = Get-Command wslpath -ErrorAction SilentlyContinue
+    if ($null -eq $wslpathCommand) {
+      return ""
+    }
+
+    $windowsPath = (& $wslpathCommand.Source -w $Path 2>$null | Out-String).Trim()
+    return $windowsPath
+  } catch {
+    return ""
+  }
+}
+
+function Join-WindowsPath {
+  param(
+    [string]$BasePath,
+    [string]$Leaf
+  )
+
+  if ([string]::IsNullOrWhiteSpace($BasePath)) {
+    return $Leaf
+  }
+  if ([string]::IsNullOrWhiteSpace($Leaf)) {
+    return $BasePath
+  }
+
+  return ($BasePath.TrimEnd('\', '/') + "\" + $Leaf)
+}
+
+function Get-WindowsDesktopPath {
+  if ($env:OS -eq "Windows_NT") {
+    try {
+      return [Environment]::GetFolderPath("Desktop")
+    } catch {
+      return ""
+    }
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $desktopRaw = & powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('Desktop')" 2>$null
+    return (($desktopRaw | Out-String).Trim())
+  } catch {
+    return ""
+  }
+}
+
+function Get-WindowsStartMenuProgramsPath {
+  if ($env:OS -eq "Windows_NT") {
+    try {
+      return [Environment]::GetFolderPath("Programs")
+    } catch {
+      return ""
+    }
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $pathRaw = & powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('Programs')" 2>$null
+    return (($pathRaw | Out-String).Trim())
+  } catch {
+    return ""
+  }
+}
+
+function Get-WindowsWslIconLocation {
+  if ($env:OS -eq "Windows_NT") {
+    $candidate = Join-Path $env:SystemRoot "System32\wsl.exe"
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      return "$candidate,0"
+    }
+    return ""
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $pathRaw = & powershell.exe -NoProfile -Command '$candidate = Join-Path $env:SystemRoot "System32\wsl.exe"; if (Test-Path -LiteralPath $candidate -PathType Leaf) { Write-Output $candidate }' 2>$null
+    $candidate = (($pathRaw | Out-String).Trim())
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+      return ""
+    }
+    return "$candidate,0"
+  } catch {
+    return ""
+  }
+}
+
+function Get-WindowsWslExecutablePath {
+  if ($env:OS -eq "Windows_NT") {
+    $candidate = Join-Path $env:SystemRoot "System32\wsl.exe"
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      return $candidate
+    }
+    return "wsl.exe"
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $pathRaw = & powershell.exe -NoProfile -Command '$candidate = Join-Path $env:SystemRoot "System32\wsl.exe"; if (Test-Path -LiteralPath $candidate -PathType Leaf) { Write-Output $candidate }' 2>$null
+    $candidate = (($pathRaw | Out-String).Trim())
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+      return "wsl.exe"
+    }
+    return $candidate
+  } catch {
+    return "wsl.exe"
+  }
+}
+
+function Get-WindowsCmdExecutablePath {
+  if ($env:OS -eq "Windows_NT") {
+    $candidate = Join-Path $env:SystemRoot "System32\cmd.exe"
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      return $candidate
+    }
+    return "cmd.exe"
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $pathRaw = & powershell.exe -NoProfile -Command '$candidate = Join-Path $env:SystemRoot "System32\cmd.exe"; if (Test-Path -LiteralPath $candidate -PathType Leaf) { Write-Output $candidate }' 2>$null
+    $candidate = (($pathRaw | Out-String).Trim())
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+      return "cmd.exe"
+    }
+    return $candidate
+  } catch {
+    return "cmd.exe"
+  }
+}
+
+function Resolve-LinuxUserForWslShortcut {
+  param([string]$LinuxProjectRoot)
+
+  $normalized = (($LinuxProjectRoot -replace [string][char]0, "").Trim())
+  if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+    $normalized = $normalized -replace "\\", "/"
+    if ($normalized -match '^/home/([^/]+)(?:/|$)') {
+      return $Matches[1]
+    }
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:USER)) {
+    return (($env:USER -replace [string][char]0, "").Trim())
+  }
+
+  return ""
+}
+
+function Get-WindowsVsCodeIconLocation {
+  if ($env:OS -eq "Windows_NT") {
+    $candidates = @(
+      (Join-Path $env:LocalAppData "Programs\Microsoft VS Code\Code.exe"),
+      (Join-Path $env:ProgramFiles "Microsoft VS Code\Code.exe"),
+      (Join-Path ${env:ProgramFiles(x86)} "Microsoft VS Code\Code.exe")
+    )
+    foreach ($candidate in $candidates) {
+      if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        return "$candidate,0"
+      }
+    }
+    return (Get-WindowsWslIconLocation)
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return ""
+  }
+
+  try {
+    $iconRaw = & powershell.exe -NoProfile -Command @'
+$candidates = @()
+$candidates += Join-Path $env:LocalAppData "Programs\Microsoft VS Code\Code.exe"
+$candidates += Join-Path $env:ProgramFiles "Microsoft VS Code\Code.exe"
+$candidates += Join-Path ${env:ProgramFiles(x86)} "Microsoft VS Code\Code.exe"
+$candidates += Join-Path $env:LocalAppData "Programs\Microsoft VS Code Insiders\Code - Insiders.exe"
+$candidates += Join-Path $env:ProgramFiles "Microsoft VS Code Insiders\Code - Insiders.exe"
+foreach ($candidate in $candidates) {
+  if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+    Write-Output $candidate
+    break
+  }
+}
+'@ 2>$null
+    $iconPath = (($iconRaw | Out-String).Trim())
+    if ([string]::IsNullOrWhiteSpace($iconPath)) {
+      return (Get-WindowsWslIconLocation)
+    }
+    return "$iconPath,0"
+  } catch {
+    return (Get-WindowsWslIconLocation)
+  }
+}
+
+function New-WindowsShortcutFile {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ShortcutPath,
+    [Parameter(Mandatory = $true)]
+    [string]$TargetPath,
+    [string]$Arguments = "",
+    [string]$WorkingDirectory = "",
+    [string]$Description = "",
+    [string]$IconLocation = ""
+  )
+
+  if ($env:OS -eq "Windows_NT") {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    $shortcut.TargetPath = $TargetPath
+    if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
+      $shortcut.Arguments = $Arguments
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+      $shortcut.WorkingDirectory = $WorkingDirectory
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Description)) {
+      $shortcut.Description = $Description
+    }
+    if (-not [string]::IsNullOrWhiteSpace($IconLocation)) {
+      $shortcut.IconLocation = $IconLocation
+    }
+    $shortcut.Save()
+    return
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    throw "Windows shortcut generation is only supported on Windows or WSL."
+  }
+
+  $tempScriptLinux = Join-Path "/tmp" ("csi-shortcut-" + [Guid]::NewGuid().ToString("N") + ".ps1")
+  $tempScriptWindows = Convert-LinuxPathToWindowsPath -Path $tempScriptLinux
+  if ([string]::IsNullOrWhiteSpace($tempScriptWindows)) {
+    throw "Failed to convert temporary shortcut script path to Windows path."
+  }
+
+  $scriptContent = @'
+param(
+  [Parameter(Mandatory = $true)][string]$ShortcutPath,
+  [Parameter(Mandatory = $true)][string]$TargetPath,
+  [string]$Arguments = "",
+  [string]$WorkingDirectory = "",
+  [string]$Description = "",
+  [string]$IconLocation = ""
+)
+
+$ErrorActionPreference = "Stop"
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($ShortcutPath)
+$shortcut.TargetPath = $TargetPath
+if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
+  $shortcut.Arguments = $Arguments
+}
+if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+  $shortcut.WorkingDirectory = $WorkingDirectory
+}
+if (-not [string]::IsNullOrWhiteSpace($Description)) {
+  $shortcut.Description = $Description
+}
+if (-not [string]::IsNullOrWhiteSpace($IconLocation)) {
+  $shortcut.IconLocation = $IconLocation
+}
+$shortcut.Save()
+'@
+
+  try {
+    Set-Content -LiteralPath $tempScriptLinux -Value $scriptContent
+    $null = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempScriptWindows `
+      -ShortcutPath $ShortcutPath `
+      -TargetPath $TargetPath `
+      -Arguments $Arguments `
+      -WorkingDirectory $WorkingDirectory `
+      -Description $Description `
+      -IconLocation $IconLocation 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "powershell.exe failed while generating Windows shortcut."
+    }
+  } finally {
+    if (Test-Path -LiteralPath $tempScriptLinux -PathType Leaf) {
+      Remove-Item -LiteralPath $tempScriptLinux -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Ensure-WindowsDirectoryPath {
+  param([string]$DirectoryPath)
+
+  if ([string]::IsNullOrWhiteSpace($DirectoryPath)) {
+    return $false
+  }
+
+  if ($env:OS -eq "Windows_NT") {
+    try {
+      New-Item -ItemType Directory -Force -Path $DirectoryPath | Out-Null
+      return $true
+    } catch {
+      return $false
+    }
+  }
+
+  if (-not (Test-IsWslLinuxEnvironment)) {
+    return $false
+  }
+
+  try {
+    $escaped = $DirectoryPath -replace "'", "''"
+    $null = & powershell.exe -NoProfile -Command ("New-Item -ItemType Directory -Force -Path '{0}' | Out-Null" -f $escaped) 2>$null
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-WindowsShortcutDirectoryPath {
+  param(
+    [string]$LocationKey,
+    [string]$TargetRoot,
+    [string]$CustomPath
+  )
+
+  switch ($LocationKey) {
+    "projectRoot" {
+      if ($env:OS -eq "Windows_NT") {
+        return $TargetRoot
+      }
+      return (Convert-LinuxPathToWindowsPath -Path $TargetRoot)
+    }
+    "desktop" {
+      return (Get-WindowsDesktopPath)
+    }
+    "startMenu" {
+      return (Get-WindowsStartMenuProgramsPath)
+    }
+    "custom" {
+      $raw = ""
+      if ($null -ne $CustomPath) {
+        $raw = [string]$CustomPath
+      }
+      $raw = $raw.Trim()
+      if ([string]::IsNullOrWhiteSpace($raw)) {
+        return ""
+      }
+      if ($raw -match '^[A-Za-z]:[\\/]') {
+        return ($raw -replace '/', '\')
+      }
+      if ($raw.StartsWith("\\")) {
+        return $raw
+      }
+      if ($raw.StartsWith("/")) {
+        return (Convert-LinuxPathToWindowsPath -Path $raw)
+      }
+
+      if ($env:OS -eq "Windows_NT") {
+        return (Join-Path $TargetRoot $raw)
+      }
+
+      $relativeOnLinux = Join-Path $TargetRoot $raw
+      return (Convert-LinuxPathToWindowsPath -Path $relativeOnLinux)
+    }
+    default {
+      return ""
+    }
+  }
+}
+
 function Get-RelativePathSafe {
   param(
     [Parameter(Mandatory = $true)]
@@ -596,7 +1009,8 @@ function Update-GitIgnoreBlock {
     [string]$RootPath,
     [bool]$IgnoreSessions,
     [string]$LauncherFileName,
-    [string]$MetadataDirName
+    [string]$MetadataDirName,
+    [string[]]$AdditionalGeneratedFiles = @()
   )
 
   $gitignorePath = Join-Path $RootPath ".gitignore"
@@ -607,6 +1021,17 @@ function Update-GitIgnoreBlock {
     $startMarker
     "# Managed by Codex Session Isolator launcher wizard."
     $LauncherFileName
+  )
+
+  if ($AdditionalGeneratedFiles.Count -gt 0) {
+    foreach ($file in $AdditionalGeneratedFiles) {
+      if (-not [string]::IsNullOrWhiteSpace($file)) {
+        $blockLines += $file
+      }
+    }
+  }
+
+  $blockLines += @(
     "$MetadataDirName/"
   )
 
@@ -680,17 +1105,32 @@ function Get-WizardDefaults {
     useRemoteWsl = $null
     codexRunInWsl = $null
     ignoreSessions = $null
+    windowsShortcutEnabled = $null
+    windowsShortcutLocation = $null
+    windowsShortcutCustomPath = $null
   }
 
   if (Test-Path -LiteralPath $defaultsPath -PathType Leaf) {
     try {
       $obj = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
-      foreach ($key in @("useRemoteWsl", "codexRunInWsl", "ignoreSessions")) {
+      foreach ($key in @("useRemoteWsl", "codexRunInWsl", "ignoreSessions", "windowsShortcutEnabled")) {
         if ($obj.PSObject.Properties.Name -contains $key) {
           $raw = $obj.$key
           if ($raw -is [bool]) {
             $values[$key] = $raw
           }
+        }
+      }
+      if ($obj.PSObject.Properties.Name -contains "windowsShortcutLocation") {
+        $rawLocation = [string]$obj.windowsShortcutLocation
+        if (-not [string]::IsNullOrWhiteSpace($rawLocation)) {
+          $values.windowsShortcutLocation = $rawLocation
+        }
+      }
+      if ($obj.PSObject.Properties.Name -contains "windowsShortcutCustomPath") {
+        $rawCustomPath = [string]$obj.windowsShortcutCustomPath
+        if (-not [string]::IsNullOrWhiteSpace($rawCustomPath)) {
+          $values.windowsShortcutCustomPath = $rawCustomPath
         }
       }
     } catch {
@@ -708,9 +1148,12 @@ function Save-WizardDefaults {
     [string]$DefaultsPath,
     [string]$RootPath,
     [string]$MetadataDirName,
-    [bool]$UseRemoteWsl,
-    [bool]$CodexRunInWsl,
-    [bool]$IgnoreSessions
+    [Nullable[bool]]$UseRemoteWsl = $null,
+    [Nullable[bool]]$CodexRunInWsl = $null,
+    [bool]$IgnoreSessions,
+    [Nullable[bool]]$WindowsShortcutEnabled = $null,
+    [string]$WindowsShortcutLocation = "",
+    [string]$WindowsShortcutCustomPath = ""
   )
 
   $parent = Split-Path -Parent $DefaultsPath
@@ -720,9 +1163,12 @@ function Save-WizardDefaults {
   }
 
   $payload = [ordered]@{
-    useRemoteWsl = $UseRemoteWsl
-    codexRunInWsl = $CodexRunInWsl
+    useRemoteWsl = if ($null -ne $UseRemoteWsl) { [bool]$UseRemoteWsl } else { $null }
+    codexRunInWsl = if ($null -ne $CodexRunInWsl) { [bool]$CodexRunInWsl } else { $null }
     ignoreSessions = $IgnoreSessions
+    windowsShortcutEnabled = if ($null -ne $WindowsShortcutEnabled) { [bool]$WindowsShortcutEnabled } else { $null }
+    windowsShortcutLocation = if ([string]::IsNullOrWhiteSpace($WindowsShortcutLocation)) { $null } else { $WindowsShortcutLocation }
+    windowsShortcutCustomPath = if ([string]::IsNullOrWhiteSpace($WindowsShortcutCustomPath)) { $null } else { $WindowsShortcutCustomPath }
     updatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
   }
 
@@ -746,18 +1192,47 @@ function Get-DefaultWorkspaceFileName {
   return "$safeName.code-workspace"
 }
 
+function Get-WindowsWslShortcutFileName {
+  param(
+    [string]$LauncherBaseName,
+    [string]$RootPath
+  )
+
+  $leaf = Split-Path -Leaf $RootPath
+  if ([string]::IsNullOrWhiteSpace($leaf)) {
+    $leaf = "Project"
+  }
+
+  $safeLeaf = $leaf -replace '[<>:"/\\|?*]', " "
+  $safeLeaf = [regex]::Replace($safeLeaf, '\s+', ' ').Trim()
+  if ([string]::IsNullOrWhiteSpace($safeLeaf)) {
+    $safeLeaf = "Project"
+  }
+
+  return "Open $safeLeaf.lnk"
+}
+
 function Remove-LegacyGeneratedArtifacts {
   param(
     [string]$RootPath,
     [string]$LauncherBaseName,
-    [string]$MetadataDirName
+    [string]$MetadataDirName,
+    [string[]]$AdditionalFiles = @()
   )
 
   $legacyPaths = @(
     (Join-Path $RootPath "$LauncherBaseName.ps1"),
     (Join-Path $RootPath "$LauncherBaseName.config.json"),
+    (Join-Path $RootPath "$LauncherBaseName`_wsl.lnk"),
+    (Join-Path $RootPath "$LauncherBaseName`_windows_wsl_bridge.bat"),
     (Join-Path $RootPath ".vsc_launcher_logs")
   )
+
+  foreach ($file in $AdditionalFiles) {
+    if (-not [string]::IsNullOrWhiteSpace($file)) {
+      $legacyPaths += (Join-Path $RootPath $file)
+    }
+  }
 
   foreach ($path in $legacyPaths) {
     if (Test-Path -LiteralPath $path -PathType Any) {
@@ -1311,6 +1786,69 @@ exit /b %EXIT_CODE%
   }
 }
 
+function New-WindowsWslShortcutForWindowsTarget {
+  param(
+    [string]$ShortcutPath,
+    [string]$ProjectLauncherPath,
+    [string]$IconLocation
+  )
+
+  $workingDirectory = Split-Path -Parent $ProjectLauncherPath
+  New-WindowsShortcutFile `
+    -ShortcutPath $ShortcutPath `
+    -TargetPath $ProjectLauncherPath `
+    -Arguments "" `
+    -WorkingDirectory $workingDirectory `
+    -Description "Open project in VS Code (WSL)" `
+    -IconLocation $IconLocation
+}
+
+function New-WindowsWslShortcutForLinuxTarget {
+  param(
+    [string]$ShortcutPath,
+    [string]$LinuxProjectRoot,
+    [string]$WslDistro,
+    [string]$LinuxUser,
+    [string]$IconLocation
+  )
+
+  $normalizedDistro = Normalize-WslName -Name (($WslDistro -replace [string][char]0, "").Trim())
+  $normalizedUser = (($LinuxUser -replace [string][char]0, "").Trim())
+  $linuxLauncherPath = ($LinuxProjectRoot.TrimEnd("/") + "/vsc_launcher.sh")
+  $wslExePath = Get-WindowsWslExecutablePath
+  $cmdExePath = Get-WindowsCmdExecutablePath
+  $windowsRoot = if ($env:OS -eq "Windows_NT") { $env:SystemRoot } else {
+    try {
+      ((& powershell.exe -NoProfile -Command '$env:SystemRoot' 2>$null) | Out-String).Trim()
+    } catch {
+      ""
+    }
+  }
+  # cmd.exe does not support UNC working directories reliably; keep Start In on a local Windows path.
+  $workingDirectory = if ([string]::IsNullOrWhiteSpace($windowsRoot)) { "" } else { $windowsRoot }
+
+  $argumentParts = @()
+  if (-not [string]::IsNullOrWhiteSpace($normalizedDistro)) {
+    $argumentParts += "-d $normalizedDistro"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($normalizedUser)) {
+    $argumentParts += "-u $normalizedUser"
+  }
+  $argumentParts += "-- $linuxLauncherPath"
+  $wslArguments = ($argumentParts -join " ")
+  $wslInvocation = "$wslExePath $wslArguments"
+  # Route through cmd.exe because direct wsl.exe targets in .lnk can no-op on some Windows setups.
+  $arguments = "/d /c `"$wslInvocation`""
+
+  New-WindowsShortcutFile `
+    -ShortcutPath $ShortcutPath `
+    -TargetPath $cmdExePath `
+    -Arguments $arguments `
+    -WorkingDirectory $workingDirectory `
+    -Description "Open project in VS Code (WSL)" `
+    -IconLocation $IconLocation
+}
+
 function New-UnixLauncherFile {
   param(
     [string]$RootPath,
@@ -1333,8 +1871,10 @@ LAUNCH_MODE='$LaunchMode'
 WORKSPACE_REL_B64='$workspaceRelB64'
 ENABLE_LOGGING='$enableLoggingLiteral'
 "@
+  $configContent = ($configContent -replace "`r`n", "`n") -replace "`r", "`n"
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   Backup-PathIfExists -Path $configPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
-  Set-Content -LiteralPath $configPath -Value $configContent
+  [System.IO.File]::WriteAllText($configPath, $configContent, $utf8NoBom)
 
   $template = @'
 #!/usr/bin/env bash
@@ -1388,9 +1928,10 @@ code --new-window "$launch_target"
 '@
 
   $content = $template.Replace("__META_DIR__", $MetadataDirName)
+  $content = ($content -replace "`r`n", "`n") -replace "`r", "`n"
 
   Backup-PathIfExists -Path $scriptPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
-  Set-Content -LiteralPath $scriptPath -Value $content
+  [System.IO.File]::WriteAllText($scriptPath, $content, $utf8NoBom)
   try {
     & chmod +x $scriptPath | Out-Null
   } catch {
@@ -1433,6 +1974,14 @@ $resolvedTargetInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | 
 $resolvedTarget = [IO.Path]::GetFullPath($resolvedTargetInfo.ProviderPath)
 $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
 $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Path -Parent $resolvedTarget }
+$isWslUncProjectTarget = $platformIsWindows -and (Test-IsWslUncPath -Path $resolvedTarget)
+$isWslLinuxProjectTarget = (Test-IsWslLinuxEnvironment) -and $resolvedTarget.StartsWith("/")
+$shouldGenerateWindowsWslShortcut = $isWslUncProjectTarget -or $isWslLinuxProjectTarget
+$windowsWslShortcutFileName = if ($shouldGenerateWindowsWslShortcut) {
+  Get-WindowsWslShortcutFileName -LauncherBaseName $launcherBaseName -RootPath $targetRoot
+} else {
+  ""
+}
 Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
 $defaultsInfo = Get-WizardDefaults -RootPath $targetRoot -MetadataDirName $metadataDirName
 $wizardDefaults = $defaultsInfo.Values
@@ -1443,9 +1992,12 @@ if (-not [string]::IsNullOrWhiteSpace($deferredFallbackInfo)) {
 
 Write-Info ("Target root: {0}" -f $targetRoot)
 Write-Info ("Generated launcher file: {0}" -f $launcherFileName)
+if ($shouldGenerateWindowsWslShortcut) {
+  Write-Info "Target detected in WSL filesystem."
+}
 Write-Info ("Wizard log: {0}" -f $script:WizardLogPath)
-if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRunInWsl -or $null -ne $wizardDefaults.ignoreSessions) {
-  Write-Info ("Loaded defaults: remoteWsl={0}, codexInWsl={1}, ignoreSessions={2}" -f $wizardDefaults.useRemoteWsl, $wizardDefaults.codexRunInWsl, $wizardDefaults.ignoreSessions)
+if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRunInWsl -or $null -ne $wizardDefaults.ignoreSessions -or $null -ne $wizardDefaults.windowsShortcutEnabled -or $null -ne $wizardDefaults.windowsShortcutLocation) {
+  Write-Info ("Loaded defaults: remoteWsl={0}, codexInWsl={1}, ignoreSessions={2}, windowsShortcutEnabled={3}, windowsShortcutLocation={4}" -f $wizardDefaults.useRemoteWsl, $wizardDefaults.codexRunInWsl, $wizardDefaults.ignoreSessions, $wizardDefaults.windowsShortcutEnabled, $wizardDefaults.windowsShortcutLocation)
 }
 
 $launchMode = "folder"
@@ -1457,7 +2009,7 @@ if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-worksp
   Write-Info ("Launch target defaulted to workspace: {0}" -f $workspaceRelativePath)
 } else {
   $workspaceFiles = @(
-    Get-ChildItem -Path $targetRoot -Filter *.code-workspace -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $targetRoot -Filter *.code-workspace -File -ErrorAction SilentlyContinue |
     ForEach-Object { $_.FullName }
   )
 
@@ -1496,10 +2048,33 @@ if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-worksp
 
 $useRemoteWsl = $false
 $wslDistro = ""
+[Nullable[bool]]$useRemoteWslForDefaults = $null
+[Nullable[bool]]$codexRunInWslForDefaults = $null
+[Nullable[bool]]$windowsShortcutEnabledForDefaults = $null
+$windowsShortcutLocationForDefaults = ""
+$windowsShortcutCustomPathForDefaults = ""
+$createWindowsShortcut = $false
+$windowsShortcutLocationKey = ""
+$windowsShortcutCustomPath = ""
+$windowsShortcutDestinationDir = ""
+$windowsShortcutPathForGeneration = ""
+$windowsShortcutPathForOutput = ""
+$shortcutLivesInProjectRoot = $false
 
 if ($platformIsWindows -and $wslAvailable) {
-  $remoteDefault = if ($null -ne $wizardDefaults.useRemoteWsl) { [bool]$wizardDefaults.useRemoteWsl } else { $true }
+  $remoteDefault = $false
+  if ($null -ne $wizardDefaults.useRemoteWsl) {
+    $remoteDefault = [bool]$wizardDefaults.useRemoteWsl
+    Write-Info "Remote WSL default loaded from saved wizard defaults."
+  } elseif ($isWslUncProjectTarget) {
+    $remoteDefault = $true
+    Write-Info "Remote WSL default: enabled (WSL UNC path detected)."
+  } else {
+    $remoteDefault = $false
+    Write-Info "Remote WSL default: disabled (local Windows path detected)."
+  }
   $useRemoteWsl = Read-YesNo -Prompt "Launch VS Code in Remote WSL mode?" -DefaultValue $remoteDefault
+  $useRemoteWslForDefaults = $useRemoteWsl
   Write-Info ("Remote WSL launch: {0}" -f ($(if ($useRemoteWsl) { "enabled" } else { "disabled" })))
   if ($useRemoteWsl) {
     $distros = @(Get-WslDistroList)
@@ -1530,16 +2105,82 @@ if ($platformIsWindows -and $wslAvailable) {
   Write-Info "WSL not detected. WSL-related options are skipped."
 }
 
-$codexRunInWsl = if ($platformIsWindows -and $wslAvailable) {
+$codexRunInWsl = if ($platformIsWindows -and $wslAvailable -and $useRemoteWsl) {
   $codexDefault = if ($null -ne $wizardDefaults.codexRunInWsl) { [bool]$wizardDefaults.codexRunInWsl } else { $true }
   Read-YesNo -Prompt "Set Codex to run in WSL for this project?" -DefaultValue $codexDefault
 } else {
   $false
 }
+if ($platformIsWindows -and $wslAvailable -and $useRemoteWsl) {
+  $codexRunInWslForDefaults = $codexRunInWsl
+}
 Write-Info ("VS Code setting chatgpt.runCodexInWindowsSubsystemForLinux = {0}" -f $codexRunInWsl.ToString().ToLowerInvariant())
 Write-Info "VS Code setting chatgpt.openOnStartup = true"
+if ($platformIsWindows -and $wslAvailable -and -not $useRemoteWsl) {
+  Write-Info "Codex-in-WSL prompt skipped because Remote WSL launch is disabled."
+}
 if ($codexRunInWsl -and -not $useRemoteWsl) {
   Write-Info "Codex-in-WSL is enabled while VS Code launch mode is local Windows."
+}
+
+if ($shouldGenerateWindowsWslShortcut) {
+  $createShortcutDefault = if ($null -ne $wizardDefaults.windowsShortcutEnabled) { [bool]$wizardDefaults.windowsShortcutEnabled } else { $false }
+  $createWindowsShortcut = Read-YesNo -Prompt "Create Windows shortcut for double-click launch?" -DefaultValue $createShortcutDefault
+  $windowsShortcutEnabledForDefaults = $createWindowsShortcut
+
+  if ($createWindowsShortcut) {
+    $locationOptions = @(
+      "Project root",
+      "Desktop",
+      "Start Menu",
+      "Custom path"
+    )
+    $locationKeyByIndex = @("projectRoot", "desktop", "startMenu", "custom")
+    $defaultLocationIndex = 0
+    if (-not [string]::IsNullOrWhiteSpace($wizardDefaults.windowsShortcutLocation)) {
+      for ($i = 0; $i -lt $locationKeyByIndex.Count; $i++) {
+        if ($locationKeyByIndex[$i] -eq $wizardDefaults.windowsShortcutLocation) {
+          $defaultLocationIndex = $i
+          break
+        }
+      }
+    }
+
+    $locationSelectionIndex = Read-ChoiceIndex -Title "Select Windows shortcut location:" -Options $locationOptions -DefaultIndex $defaultLocationIndex
+    $windowsShortcutLocationKey = $locationKeyByIndex[$locationSelectionIndex]
+    $windowsShortcutLocationForDefaults = $windowsShortcutLocationKey
+    if ($windowsShortcutLocationKey -eq "custom") {
+      $windowsShortcutCustomPath = Read-NonEmpty -Prompt "Enter Windows shortcut directory path" -DefaultValue ([string]$wizardDefaults.windowsShortcutCustomPath)
+      $windowsShortcutCustomPathForDefaults = $windowsShortcutCustomPath
+    } else {
+      $windowsShortcutCustomPathForDefaults = ""
+    }
+
+    $windowsShortcutDestinationDir = Resolve-WindowsShortcutDirectoryPath `
+      -LocationKey $windowsShortcutLocationKey `
+      -TargetRoot $targetRoot `
+      -CustomPath $windowsShortcutCustomPath
+    if ([string]::IsNullOrWhiteSpace($windowsShortcutDestinationDir)) {
+      $createWindowsShortcut = $false
+      $windowsShortcutEnabledForDefaults = $false
+      Write-Info ("Windows shortcut location '{0}' is unavailable. Shortcut generation skipped." -f $windowsShortcutLocationKey)
+    } elseif (-not (Ensure-WindowsDirectoryPath -DirectoryPath $windowsShortcutDestinationDir)) {
+      $createWindowsShortcut = $false
+      $windowsShortcutEnabledForDefaults = $false
+      Write-Info ("Unable to create/access Windows shortcut directory: {0}. Shortcut generation skipped." -f $windowsShortcutDestinationDir)
+    } else {
+      $windowsShortcutPathForGeneration = Join-WindowsPath -BasePath $windowsShortcutDestinationDir -Leaf $windowsWslShortcutFileName
+      $windowsShortcutPathForOutput = $windowsShortcutPathForGeneration
+      $shortcutLivesInProjectRoot = ($windowsShortcutLocationKey -eq "projectRoot")
+      if ($shortcutLivesInProjectRoot) {
+        $windowsShortcutPathForOutput = Join-Path $targetRoot $windowsWslShortcutFileName
+      }
+      Write-Info ("Windows shortcut location selected: {0}" -f $locationOptions[$locationSelectionIndex])
+      Write-Info ("Windows shortcut destination: {0}" -f $windowsShortcutDestinationDir)
+    }
+  } else {
+    Write-Info "Windows shortcut generation disabled."
+  }
 }
 
 $ignoreDefault = if ($null -ne $wizardDefaults.ignoreSessions) { [bool]$wizardDefaults.ignoreSessions } else { $false }
@@ -1572,15 +2213,29 @@ Save-WizardDefaults `
   -DefaultsPath $defaultsInfo.Path `
   -RootPath $targetRoot `
   -MetadataDirName $metadataDirName `
-  -UseRemoteWsl $useRemoteWsl `
-  -CodexRunInWsl $codexRunInWsl `
-  -IgnoreSessions $ignoreSessions
-Remove-LegacyGeneratedArtifacts -RootPath $targetRoot -LauncherBaseName $launcherBaseName -MetadataDirName $metadataDirName
+  -UseRemoteWsl $useRemoteWslForDefaults `
+  -CodexRunInWsl $codexRunInWslForDefaults `
+  -IgnoreSessions $ignoreSessions `
+  -WindowsShortcutEnabled $windowsShortcutEnabledForDefaults `
+  -WindowsShortcutLocation $windowsShortcutLocationForDefaults `
+  -WindowsShortcutCustomPath $windowsShortcutCustomPathForDefaults
+Remove-LegacyGeneratedArtifacts `
+  -RootPath $targetRoot `
+  -LauncherBaseName $launcherBaseName `
+  -MetadataDirName $metadataDirName `
+  -AdditionalFiles @($windowsWslShortcutFileName)
+
+$additionalGeneratedFiles = @()
+if ($createWindowsShortcut -and $shortcutLivesInProjectRoot) {
+  $additionalGeneratedFiles += $windowsWslShortcutFileName
+}
+
 Update-GitIgnoreBlock `
   -RootPath $targetRoot `
   -IgnoreSessions $ignoreSessions `
   -LauncherFileName $launcherFileName `
-  -MetadataDirName $metadataDirName
+  -MetadataDirName $metadataDirName `
+  -AdditionalGeneratedFiles $additionalGeneratedFiles
 
 $outputs = if ($platformIsWindows) {
   New-WindowsLauncherFile `
@@ -1601,6 +2256,65 @@ $outputs = if ($platformIsWindows) {
     -LaunchMode $launchMode `
     -WorkspaceRelativePath $workspaceRelativePath `
     -EnableLoggingByDefault $enableLoggingByDefault
+}
+
+$windowsShortcutIconLocation = if ($shouldGenerateWindowsWslShortcut) { Get-WindowsVsCodeIconLocation } else { "" }
+$shortcutDistroForGeneration = if ($platformIsWindows) { $wslDistro } else { $env:WSL_DISTRO_NAME }
+$shortcutLinuxUserForGeneration = if ($shouldGenerateWindowsWslShortcut) { Resolve-LinuxUserForWslShortcut -LinuxProjectRoot $targetRoot } else { "" }
+if ($shouldGenerateWindowsWslShortcut -and -not [string]::IsNullOrWhiteSpace($shortcutLinuxUserForGeneration)) {
+  Write-Info ("Windows shortcut Linux user: {0}" -f $shortcutLinuxUserForGeneration)
+}
+
+if ($createWindowsShortcut -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForGeneration)) {
+  if ($shortcutLivesInProjectRoot -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForOutput)) {
+    Backup-PathIfExists -Path $windowsShortcutPathForOutput -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
+  }
+
+  if ($platformIsWindows) {
+    if ($isWslUncProjectTarget) {
+      $projectLauncherPath = $outputs.LauncherPath
+      New-WindowsWslShortcutForWindowsTarget `
+        -ShortcutPath $windowsShortcutPathForGeneration `
+        -ProjectLauncherPath $projectLauncherPath `
+        -IconLocation $windowsShortcutIconLocation
+    } else {
+      New-WindowsWslShortcutForLinuxTarget `
+        -ShortcutPath $windowsShortcutPathForGeneration `
+        -LinuxProjectRoot $targetRoot `
+        -WslDistro $shortcutDistroForGeneration `
+        -LinuxUser $shortcutLinuxUserForGeneration `
+        -IconLocation $windowsShortcutIconLocation
+    }
+  } else {
+    New-WindowsWslShortcutForLinuxTarget `
+      -ShortcutPath $windowsShortcutPathForGeneration `
+      -LinuxProjectRoot $targetRoot `
+      -WslDistro $shortcutDistroForGeneration `
+      -LinuxUser $shortcutLinuxUserForGeneration `
+      -IconLocation $windowsShortcutIconLocation
+  }
+
+  if ($shortcutLivesInProjectRoot) {
+    $outputs["WindowsWslShortcutPath"] = $windowsShortcutPathForOutput
+  } else {
+    $outputs["WindowsExternalShortcutPath"] = $windowsShortcutPathForGeneration
+  }
+}
+
+if ($shouldGenerateWindowsWslShortcut -and $createWindowsShortcut -and [string]::IsNullOrWhiteSpace($windowsShortcutPathForGeneration)) {
+  Write-Info "Windows WSL shortcut path was not resolved. Shortcut generation skipped."
+}
+
+if ($outputs.Contains("WindowsWslShortcutPath")) {
+  Write-Info ("Windows WSL shortcut generated: {0}" -f $outputs["WindowsWslShortcutPath"])
+}
+
+if ($outputs.Contains("WindowsExternalShortcutPath")) {
+  Write-Info ("Windows external shortcut generated: {0}" -f $outputs["WindowsExternalShortcutPath"])
+}
+
+if ($shouldGenerateWindowsWslShortcut -and $createWindowsShortcut -and [string]::IsNullOrWhiteSpace($windowsShortcutIconLocation)) {
+  Write-Info "VS Code icon was not detected. Shortcut uses default system icon."
 }
 
 Write-Host ""

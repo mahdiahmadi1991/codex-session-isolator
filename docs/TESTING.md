@@ -39,6 +39,7 @@ Expected:
 - In local Windows mode, it creates project-scoped VS Code user data under `.vsc_launcher/vscode-user-data`.
 - In Remote WSL mode, it does not create `.vsc_launcher/vscode-user-data`.
 - In local Windows + Codex-in-WSL mode, it sets profile-level `chatgpt.cliExecutable` to `.vsc_launcher/codex-wsl-wrapper.sh`.
+- For WSL-hosted targets, wizard can generate `Open <project>.lnk` in selected location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 
 ## 0.1) No WSL available
 
