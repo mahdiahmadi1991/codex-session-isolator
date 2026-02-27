@@ -131,7 +131,7 @@ Wizard defaults:
 - In Remote WSL mode, launcher skips isolated `--user-data-dir` because WSL `code` CLI does not support that option.
 - When `chatgpt.runCodexInWindowsSubsystemForLinux=true` and launch mode is local Windows, launcher configures an isolated `chatgpt.cliExecutable` wrapper in the project profile to force project `CODEX_HOME` for Codex app-server.
 
-### VS Code extension (preview)
+### VS Code extension
 
 The extension adds in-editor commands for wizard UX and launcher operations:
 
@@ -144,6 +144,11 @@ Marketplace identifier:
 
 - `2ma.codex-session-isolator`
 
+Release channels:
+
+- Stable: published on every push/merge to `main`.
+- Pre-release: published on every push/merge to `pre-release`.
+
 Quick start (Marketplace install -> setup -> verify):
 
 1. Install `2ma.codex-session-isolator` from VS Code Marketplace.
@@ -155,6 +160,18 @@ Quick start (Marketplace install -> setup -> verify):
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
 5. Expected value: `<project-root>/.codex` (or Linux-equivalent path in WSL/Unix mode).
+
+Install pre-release build:
+
+1. Open extension page for `2ma.codex-session-isolator`.
+2. Open Manage menu (gear icon).
+3. Choose `Install Pre-Release Version` (or `Switch to Pre-Release Version`).
+
+CLI:
+
+```bash
+code --install-extension 2ma.codex-session-isolator --pre-release
+```
 
 Development run:
 
@@ -269,10 +286,10 @@ Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
 
 - Branch model:
   - `pre-release`: integration branch. Every push/merge auto-publishes Marketplace pre-release.
-  - `main`: stable branch. Stable publish happens from GitHub Release (`release.published`).
+  - `main`: stable branch. Every push/merge auto-publishes Marketplace stable.
 - CI/Security workflows run only for `main` and `pre-release` (push + pull request).
-- Stable publish: create a GitHub Release tag that matches extension version (`v<version>`).
-- Manual publish: run the `Extension Publish` workflow via `workflow_dispatch` (`pre-release` or `stable`).
+- Manual publish fallback: run `Extension Publish` via `workflow_dispatch` (`pre-release` or `stable`).
+- Manual stable fallback requires `ref=main` and `release_tag=v<version>`.
 
 Required repository secret:
 
