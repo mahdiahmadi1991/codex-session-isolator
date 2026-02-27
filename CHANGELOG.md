@@ -48,6 +48,7 @@ All notable changes to this project are documented in this file.
 - Extension publish workflow now prepares manifest per channel at publish time (`preview=true` for pre-release, non-preview for stable) for clearer Marketplace channel behavior.
 - Extension Marketplace README hero image now uses an absolute HTTPS URL for reliable rendering.
 - Fixed publish workflow Marketplace verification step to compute extension id without shell-sensitive template literals.
+- Extension package version bumped to `0.3.7` for Marketplace pre-release rollout of channel/readme fixes.
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
