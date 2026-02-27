@@ -2,7 +2,7 @@
 
 Per-project Codex session isolation for VS Code targets (workspaces or folders).
 
-![Codex Session Isolator Hero](media/hero.png)
+![Codex Session Isolator Hero](https://raw.githubusercontent.com/mahdiahmadi1991/codex-session-isolator/main/extension/media/hero.png)
 
 ## Why this extension
 
@@ -48,6 +48,23 @@ When launched through generated launcher:
 Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
+
+## Release channels
+
+- Stable channel: published from `main`.
+- Pre-release channel: published from `pre-release`.
+
+Install pre-release build from VS Code:
+
+1. Open extension page for `2ma.codex-session-isolator`.
+2. Open Manage menu (gear icon).
+3. Choose `Install Pre-Release Version` (or `Switch to Pre-Release Version`).
+
+CLI alternative:
+
+```bash
+code --install-extension 2ma.codex-session-isolator --pre-release
+```
 
 Default wizard answers on Windows + WSL are context-aware:
 

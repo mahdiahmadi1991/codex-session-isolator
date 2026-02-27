@@ -17,7 +17,7 @@ All notable changes to this project are documented in this file.
 - Extension documentation: `docs/EXTENSION.md`.
 - Marketplace preparation guide: `docs/MARKETPLACE.md`.
 - Extension Marketplace assets: `extension/media/icon.png` and `extension/media/hero.png`.
-- Marketplace publish automation workflow: `.github/workflows/extension-publish.yml` (release/manual plus branch-driven publish paths).
+- Marketplace publish automation workflow: `.github/workflows/extension-publish.yml` (branch/manual channel publishing).
 - Extension build/package flow now auto-syncs bundled wizard from `tools/vsc-launcher-wizard.ps1` via `extension/scripts/sync-wizard.mjs`.
 - Privacy notice: `PRIVACY.md`.
 - Trust and safety model guide: `docs/TRUST.md`.
@@ -44,7 +44,9 @@ All notable changes to this project are documented in this file.
 - Extension `Open Logs` action now opens the latest launcher log file directly in the editor (cross-platform reliable behavior).
 - Extension `Open Config` action now resolves both Windows (`.vsc_launcher/config.json`) and Unix (`.vsc_launcher/config.env`) launcher configs.
 - CI and Security workflows are now scoped to `main` and `pre-release` branches only (push and pull request events).
-- Marketplace publish workflow now auto-publishes pre-release builds from `pre-release` branch pushes (stable publish remains release-driven).
+- Marketplace publish workflow now publishes by branch policy: `pre-release` push -> pre-release channel, `main` push -> stable channel.
+- Extension publish workflow now prepares manifest per channel at publish time (`preview=true` for pre-release, non-preview for stable) for clearer Marketplace channel behavior.
+- Extension Marketplace README hero image now uses an absolute HTTPS URL for reliable rendering.
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
