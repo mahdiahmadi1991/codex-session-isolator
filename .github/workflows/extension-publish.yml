@@ -130,17 +130,10 @@ jobs:
             exit 1
           fi
 
-      - name: Validate pre-release version format
-        if: steps.channel.outputs.channel == 'pre-release'
+      - name: Validate version lane for selected channel
         shell: bash
         run: |
-          version=$(node -p "require('./extension/package.json').version")
-          if [[ "$version" == *-* ]]; then
-            echo "Pre-release publishing requires a plain semver version (x.y.z)."
-            echo "Current version '$version' contains a pre-release suffix which Marketplace does not accept."
-            exit 1
-          fi
-          echo "Using pre-release package version: $version"
+          node ./tools/validate-extension-version-lane.mjs "${{ steps.channel.outputs.channel }}"
 
       - name: Package extension
         working-directory: extension

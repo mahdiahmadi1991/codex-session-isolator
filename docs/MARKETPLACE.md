@@ -81,6 +81,9 @@ Supported triggers:
 Stable policy rules:
 
 - Stable publish version is sourced from `extension/package.json`.
+- Stable channel must use an even patch version (`x.y.0`, `x.y.2`, ...).
+- Pre-release channel must use an odd patch version (`x.y.1`, `x.y.3`, ...).
+- The same numeric version must never be reused across both channels.
 - Stable git tag MUST match extension version (`v<version>`).
 - Manual stable publish MUST run on `main` and pass `release_tag=v<version>`.
 - Stable extension manifest MUST not be preview (`preview` omitted or `false`).
@@ -96,9 +99,12 @@ Required repository secret:
 
 Recommended rollout:
 
-1. Merge feature work into `pre-release` and validate automatic pre-release publishing.
-2. Promote to `main` only for stable-ready commits (push/merge to `main` auto-publishes stable).
-3. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
+1. Merge feature work into `pre-release` and keep the extension version on an odd patch number.
+2. When ready to ship, cut `release/<stable-version>` from `pre-release`.
+3. Bump the extension version on the release branch to the next even patch number.
+4. Merge the release branch into `main` (push/merge to `main` auto-publishes stable).
+5. Immediately bump `pre-release` again to the next odd patch after the stable release lands.
+6. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
 
 ## Integrity verification (consumer side)
 
