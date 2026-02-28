@@ -104,6 +104,18 @@ function Get-DefaultWslDistro {
   return $null
 }
 
+function Convert-ToCmdReachablePath {
+  param([string]$Path)
+
+  $normalized = $Path -replace '^[^:]+::', ''
+
+  if ($normalized -match '^[\\]{2}wsl\.localhost[\\]') {
+    return ($normalized -replace '^[\\]{2}wsl\.localhost[\\]', '\\wsl$\')
+  }
+
+  return $normalized
+}
+
 function Get-LatestLog {
   param(
     [string]$LogsDir,
@@ -127,10 +139,53 @@ function Invoke-ExternalPowerShellScript {
   $outPath = Join-Path $env:TEMP ("csi-ps-out-" + [Guid]::NewGuid().ToString("N") + ".txt")
   $errPath = Join-Path $env:TEMP ("csi-ps-err-" + [Guid]::NewGuid().ToString("N") + ".txt")
   try {
-    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $Arguments
+    $scriptPathForProcess = Convert-ToCmdReachablePath -Path $ScriptPath
+    $normalizedArguments = @(
+      foreach ($arg in $Arguments) {
+        if ($arg -match '::' -or $arg -match '^[\\]{2}wsl\.localhost[\\]') {
+          Convert-ToCmdReachablePath -Path $arg
+        } else {
+          $arg
+        }
+      }
+    )
+    $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPathForProcess) + $normalizedArguments
     $proc = Start-Process `
       -FilePath "powershell" `
       -ArgumentList $argList `
+      -NoNewWindow `
+      -Wait `
+      -PassThru `
+      -RedirectStandardOutput $outPath `
+      -RedirectStandardError $errPath
+
+    $stdout = if (Test-Path -LiteralPath $outPath -PathType Leaf) { Get-Content -LiteralPath $outPath -Raw } else { "" }
+    $stderr = if (Test-Path -LiteralPath $errPath -PathType Leaf) { Get-Content -LiteralPath $errPath -Raw } else { "" }
+    $output = ($stdout + "`n" + $stderr).Trim()
+    return @{
+      ExitCode = $proc.ExitCode
+      Output = $output
+    }
+  } finally {
+    if (Test-Path -LiteralPath $outPath -PathType Leaf) {
+      Remove-Item -LiteralPath $outPath -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $errPath -PathType Leaf) {
+      Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Invoke-CmdProcess {
+  param([string]$CommandLine)
+
+  $outPath = Join-Path $env:TEMP ("csi-cmd-out-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  $errPath = Join-Path $env:TEMP ("csi-cmd-err-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  try {
+    $proc = Start-Process `
+      -FilePath "cmd.exe" `
+      -ArgumentList @("/d", "/s", "/c", $CommandLine) `
+      -WorkingDirectory $env:SystemRoot `
       -NoNewWindow `
       -Wait `
       -PassThru `
@@ -169,16 +224,16 @@ function Invoke-Wizard {
     Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
 
     $debugArg = if ($DebugMode) { " --debug" } else { "" }
-    $targetArg = if ($UseTargetFlag) { "--target ""$TargetPath""" } else { """$TargetPath""" }
-    $cmd = "tools\vsc-launcher.bat $targetArg" + $debugArg + " < ""$inputFile"""
-    Push-Location $RepoRoot
-    try {
-      cmd /c $cmd | Out-Host
-      if ($LASTEXITCODE -ne 0) {
-        throw "Wizard failed with exit code $LASTEXITCODE for target $TargetPath"
-      }
-    } finally {
-      Pop-Location
+    $targetPathForCmd = Convert-ToCmdReachablePath -Path $TargetPath
+    $targetArg = if ($UseTargetFlag) { "--target ""$targetPathForCmd""" } else { """$targetPathForCmd""" }
+    $repoRootForCmd = Convert-ToCmdReachablePath -Path $RepoRoot
+    $cmd = ('pushd "{0}" && tools\vsc-launcher.bat {1}{2} < "{3}"' -f $repoRootForCmd, $targetArg, $debugArg, $inputFile)
+    $result = Invoke-CmdProcess -CommandLine $cmd
+    if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
+      $result.Output | Out-Host
+    }
+    if ($result.ExitCode -ne 0) {
+      throw "Wizard failed with exit code $($result.ExitCode) for target $TargetPath"
     }
   } finally {
     if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
@@ -202,16 +257,16 @@ function Invoke-WizardScriptDirect {
     Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
 
     $debugArg = if ($DebugMode) { " -DebugMode" } else { "" }
-    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File ""$ScriptPath"" -TargetPath ""$TargetPath""" + $debugArg + " < ""$inputFile"""
-
-    Push-Location $RepoRoot
-    try {
-      cmd /c $cmd | Out-Host
-      if ($LASTEXITCODE -ne 0) {
-        throw "Wizard script failed with exit code $LASTEXITCODE for target $TargetPath"
-      }
-    } finally {
-      Pop-Location
+    $repoRootForCmd = Convert-ToCmdReachablePath -Path $RepoRoot
+    $scriptPathForCmd = Convert-ToCmdReachablePath -Path $ScriptPath
+    $targetPathForCmd = Convert-ToCmdReachablePath -Path $TargetPath
+    $cmd = ('pushd "{0}" && powershell -NoProfile -ExecutionPolicy Bypass -File "{1}" -TargetPath "{2}"{3} < "{4}"' -f $repoRootForCmd, $scriptPathForCmd, $targetPathForCmd, $debugArg, $inputFile)
+    $result = Invoke-CmdProcess -CommandLine $cmd
+    if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
+      $result.Output | Out-Host
+    }
+    if ($result.ExitCode -ne 0) {
+      throw "Wizard script failed with exit code $($result.ExitCode) for target $TargetPath"
     }
   } finally {
     if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
@@ -263,7 +318,9 @@ try {
   Write-Host "[test] Case 0: wizard helper usage output"
   Push-Location $repoRoot
   try {
-    $helpBat = cmd /c "tools\vsc-launcher.bat --help" 2>&1 | Out-String
+    $repoRootForCmd = Convert-ToCmdReachablePath -Path $repoRoot
+    $helpBatResult = Invoke-CmdProcess -CommandLine ('pushd "{0}" && tools\vsc-launcher.bat --help' -f $repoRootForCmd)
+    $helpBat = $helpBatResult.Output
     Assert-Contains $helpBat "Usage:" "Batch helper help output mismatch."
 
     $helpPs = Invoke-ExternalPowerShellScript -ScriptPath (Join-Path $repoRoot "tools\vsc-launcher.ps1") -Arguments @("--help")
@@ -308,6 +365,13 @@ try {
   $outWorkspace = Invoke-ExternalPowerShellScript -ScriptPath $canonicalLauncher -Arguments @("-TargetPath", $ws1, "-DryRun")
   Assert-True ($outWorkspace.ExitCode -eq 0) "Workspace dry-run failed."
   Assert-Contains $outWorkspace.Output "[dry-run] Local CODEX_HOME: $case1\.codex" "Workspace dry-run CODEX_HOME mismatch."
+
+  $repoRootForCmd = Convert-ToCmdReachablePath -Path $repoRoot
+  $case1ForCmd = Convert-ToCmdReachablePath -Path $case1
+  $batchDryRun = Invoke-CmdProcess -CommandLine ('pushd "{0}" && launchers\codex-session-isolator.bat "{1}" --dry-run' -f $repoRootForCmd, $case1ForCmd)
+  Assert-True ($batchDryRun.ExitCode -eq 0) "Canonical batch dry-run failed."
+  Assert-Contains $batchDryRun.Output "[dry-run] Local launch target:" "Canonical batch dry-run should report local launch target."
+  Assert-Contains $batchDryRun.Output "sample.code-workspace" "Canonical batch dry-run should prefer workspace launch target."
 
   Write-Host "[test] Case 2: wizard generation baseline (WSL unavailable mode)"
   $case2 = Join-Path $tmpRoot "case2-wizard-local"
@@ -360,9 +424,15 @@ try {
   $case20UncTarget = '\\wsl$\Ubuntu-NoWSL\home\user\project'
   try {
     Set-Content -LiteralPath $case20InputFile -Value "`r`n" -NoNewline
-    $case20Cmd = ('pushd "{0}" && powershell -NoProfile -ExecutionPolicy Bypass -File "{1}" -TargetPath "{2}" < "{3}"' -f $case20, $toolWizardPath, $case20UncTarget, $case20InputFile)
-    cmd /c $case20Cmd | Out-Host
-    Assert-True ($LASTEXITCODE -eq 0) "Case 2.0 wizard invocation failed for no-WSL UNC fallback."
+    $case20ForCmd = Convert-ToCmdReachablePath -Path $case20
+    $toolWizardPathForCmd = Convert-ToCmdReachablePath -Path $toolWizardPath
+    $case20UncTargetForCmd = Convert-ToCmdReachablePath -Path $case20UncTarget
+    $case20Cmd = ('pushd "{0}" && powershell -NoProfile -ExecutionPolicy Bypass -File "{1}" -TargetPath "{2}" < "{3}"' -f $case20ForCmd, $toolWizardPathForCmd, $case20UncTargetForCmd, $case20InputFile)
+    $case20Result = Invoke-CmdProcess -CommandLine $case20Cmd
+    if (-not [string]::IsNullOrWhiteSpace($case20Result.Output)) {
+      $case20Result.Output | Out-Host
+    }
+    Assert-True ($case20Result.ExitCode -eq 0) "Case 2.0 wizard invocation failed for no-WSL UNC fallback."
   } finally {
     if (Test-Path -LiteralPath $case20InputFile -PathType Leaf) {
       Remove-Item -LiteralPath $case20InputFile -Force -ErrorAction SilentlyContinue
@@ -516,11 +586,16 @@ try {
   $dryRun4 = Invoke-ExternalPowerShellScript -ScriptPath $runner4 -Arguments @("-DryRun", "-Log")
   Assert-True ($dryRun4.ExitCode -eq 0) "Remote-mode dry-run failed."
   Assert-NotContains $dryRun4.Output "VSCode user-data-dir" "Remote-mode dry-run should not print user-data-dir."
+  Assert-Contains $dryRun4.Output "Remote WSL VS Code agent dir:" "Remote-mode dry-run should print project-scoped WSL agent dir."
+  Assert-Contains $dryRun4.Output ".vsc_launcher\vscode-agent" "Remote-mode dry-run agent dir path mismatch."
   Assert-True (-not (Test-Path -LiteralPath (Join-Path $meta4 "vscode-user-data") -PathType Any)) "Remote mode must not create vscode-user-data."
+  Assert-True (Test-Path -LiteralPath (Join-Path $meta4 "vscode-agent") -PathType Container) "Remote mode should create project-scoped vscode-agent dir."
 
   $latestLog4 = Get-LatestLog -LogsDir (Join-Path $meta4 "logs")
   $log4 = Get-Content -LiteralPath $latestLog4 -Raw
   Assert-Contains $log4 "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode." "Remote mode note missing in logs."
+  Assert-Contains $log4 "RemoteWSLAgentDir=" "Remote mode log should record Windows agent dir."
+  Assert-Contains $log4 "vscode-agent" "Remote mode log should mention project agent dir."
 
   Write-Host "[test] Case 5: concurrent launcher runs isolate per-project state"
   $case5 = Join-Path $tmpRoot "case5-concurrency"
@@ -617,43 +692,41 @@ try {
         Set-Content -LiteralPath $case6Gitignore -Value "# wsl unc case`r`n" -NoNewline
 
         Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
-        $case6Distros = @(
-          wsl.exe -l -q 2>$null |
-          ForEach-Object { ($_ -replace [string][char]0, "").Trim() } |
-          Where-Object { $_ -and $_ -notmatch '^docker-desktop(-data)?$' }
-        )
-        $case6Responses = if ($case6Distros.Count -gt 1) {
-          # remoteWsl, distroSelection, codexRunInWsl, createShortcut, locationSelection, ignoreSessions
-          @("", "", "", "y", "", "")
-        } else {
-          # remoteWsl, codexRunInWsl, createShortcut, locationSelection, ignoreSessions
-          @("", "", "y", "", "")
-        }
+        # remoteWsl(default yes), codexRunInWsl(yes), createShortcut(yes), shortcutLocation(default desktop), logging(yes)
+        $case6Responses = @("", "y", "y", "", "y")
         Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case6UncRoot -Responses $case6Responses -DebugMode -UseTargetFlag
 
-        $case6Runner = Join-Path $case6UncRoot ".vsc_launcher\runner.ps1"
-        $case6Config = Join-Path $case6UncRoot ".vsc_launcher\config.json"
+        $case6Launcher = Join-Path $case6UncRoot "vsc_launcher.sh"
+        $case6Config = Join-Path $case6UncRoot ".vsc_launcher\config.env"
         $case6BridgeCandidates = @(Get-ChildItem -LiteralPath $case6UncRoot -Filter "Open *.lnk" -File -ErrorAction SilentlyContinue)
-        $case6Wrapper = Join-Path $case6UncRoot ".vsc_launcher\codex-wsl-wrapper.sh"
-        $case6ProfileSettings = Join-Path $case6UncRoot ".vsc_launcher\vscode-user-data\User\settings.json"
         $case6LogsDir = Join-Path $case6UncRoot ".vsc_launcher\logs"
+        $case6Runner = Join-Path $case6UncRoot ".vsc_launcher\runner.ps1"
 
-        Assert-True (Test-Path -LiteralPath $case6Runner -PathType Leaf) "Case 6 runner not generated."
+        Assert-True (Test-Path -LiteralPath $case6Launcher -PathType Leaf) "Case 6 Unix launcher not generated."
         Assert-True (Test-Path -LiteralPath $case6Config -PathType Leaf) "Case 6 config not generated."
+        Assert-True (-not (Test-Path -LiteralPath $case6Runner -PathType Leaf)) "Case 6 should not generate Windows runner for WSL targets."
         Assert-True ($case6BridgeCandidates.Count -eq 1) "Case 6 Windows WSL shortcut not generated."
         Assert-True (Test-Path -LiteralPath $case6Gitignore -PathType Leaf) "Case 6 .gitignore should remain present."
 
-        $case6ConfigDefaults = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
-        Assert-True ([bool]$case6ConfigDefaults.useRemoteWsl) "Case 6 default should enable Remote WSL."
-        Assert-True ([bool]$case6ConfigDefaults.codexRunInWsl) "Case 6 default should enable Codex-in-WSL."
-        Assert-True ($case6ConfigDefaults.wslDistro -eq $case6Distro) "Case 6 default distro should match Windows default distro."
+        $case6ConfigText = Get-Content -LiteralPath $case6Config -Raw
+        Assert-Contains $case6ConfigText "LAUNCH_MODE='workspace'" "Case 6 config should use workspace mode."
+        Assert-Contains $case6ConfigText "ENABLE_LOGGING='1'" "Case 6 config should enable launcher logging in debug mode."
 
         $case6GitignoreText = Get-Content -LiteralPath $case6Gitignore -Raw
         Assert-Contains $case6GitignoreText "vsc_launcher.*" "Case 6 gitignore missing launcher ignore entry."
         Assert-Contains $case6GitignoreText $case6BridgeCandidates[0].Name "Case 6 gitignore missing Windows WSL shortcut entry."
-        Assert-Contains $case6GitignoreText ".codex/*" "Case 6 default should keep sessions tracked (.codex/* strategy)."
-        Assert-Contains $case6GitignoreText "!.codex/sessions/**" "Case 6 default should keep sessions unignored."
-        Assert-Contains $case6GitignoreText "!.codex/archived_sessions/**" "Case 6 default should keep archived sessions unignored."
+        Assert-Contains $case6GitignoreText ".codex/" "Case 6 gitignore should ignore project-local .codex state."
+
+        $case6LauncherText = Get-Content -LiteralPath $case6Launcher -Raw
+        Assert-Contains $case6LauncherText 'export CODEX_HOME="$codex_home"' "Case 6 launcher should export CODEX_HOME."
+        Assert-Contains $case6LauncherText 'setsid -f code --new-window "$launch_target"' "Case 6 launcher should prefer setsid for detached launch."
+        Assert-Contains $case6LauncherText 'nohup code --new-window "$launch_target"' "Case 6 launcher should include nohup fallback."
+        Assert-Contains $case6LauncherText 'sleep 1' "Case 6 launcher should wait briefly after dispatch."
+
+        $case6WizardLogPath = Get-LatestLog -LogsDir $case6LogsDir -Pattern "wizard-*.log"
+        $case6WizardLog = Get-Content -LiteralPath $case6WizardLogPath -Raw
+        Assert-Contains $case6WizardLog "Target detected in WSL filesystem." "Case 6 wizard log should record WSL target detection."
+        Assert-Contains $case6WizardLog "Windows WSL shortcut generated:" "Case 6 wizard log should record shortcut generation."
 
         Write-Host "[test] Case 6.1: local Windows path defaults to local mode"
         $case61 = Join-Path $tmpRoot "case61-local-defaults"
@@ -673,93 +746,6 @@ try {
         $case61WizardLog = Get-Content -LiteralPath $case61WizardLogPath -Raw
         Assert-Contains $case61WizardLog "local Windows path detected" "Case 6.1 wizard log should explain local Windows default."
         Assert-Contains $case61WizardLog "Codex-in-WSL prompt skipped because Remote WSL launch is disabled." "Case 6.1 should skip Codex-in-WSL prompt."
-
-        function Set-Case6Config {
-          param(
-            [bool]$UseRemoteWsl,
-            [bool]$CodexRunInWsl
-          )
-
-          $cfg = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
-          $cfg.useRemoteWsl = $UseRemoteWsl
-          $cfg.codexRunInWsl = $CodexRunInWsl
-          $cfg.wslDistro = if ($UseRemoteWsl) { $case6Distro } else { "" }
-          Set-Content -LiteralPath $case6Config -Value ($cfg | ConvertTo-Json -Depth 20)
-        }
-
-        function Assert-Case6RemoteResult {
-          param(
-            $Result,
-            [string]$Label
-          )
-
-          if ($Result.ExitCode -eq 0) {
-            return
-          }
-
-          $known = @(
-            "VS Code command 'code' not found in WSL PATH.",
-            "Failed to launch VS Code in WSL mode."
-          )
-          foreach ($pattern in $known) {
-            if ($Result.Output.Contains($pattern)) {
-              return
-            }
-          }
-
-          throw "Assertion failed: $Label`nUnexpected remote output: $($Result.Output)"
-        }
-
-        # Matrix A: VS Code local Windows, Codex local (Run in WSL = false)
-        Set-Case6Config -UseRemoteWsl $false -CodexRunInWsl $false
-        $case6LocalNoWsl = Invoke-RunnerWithMockCode -RunnerPath $case6Runner
-        Assert-True ($case6LocalNoWsl.ExitCode -eq 0) ("Case 6A local/no-WSL failed. Output: " + $case6LocalNoWsl.Output)
-        Assert-Contains $case6LocalNoWsl.Output "mock-code --new-window --user-data-dir" "Case 6A should use isolated user-data-dir launch."
-        Assert-True (Test-Path -LiteralPath $case6ProfileSettings -PathType Leaf) "Case 6A isolated profile settings not generated."
-        $case6ProfileNoWsl = Get-Content -LiteralPath $case6ProfileSettings -Raw | ConvertFrom-Json
-        $case6ProfileNoWslPropNames = @($case6ProfileNoWsl.PSObject.Properties | ForEach-Object { $_.Name })
-        if ($case6ProfileNoWslPropNames -contains "chatgpt.cliExecutable") {
-          $case6CliNoWsl = [string]$case6ProfileNoWsl.'chatgpt.cliExecutable'
-          Assert-True ([string]::IsNullOrWhiteSpace($case6CliNoWsl) -or -not $case6CliNoWsl.Contains("codex-wsl-wrapper.sh")) "Case 6A should not keep WSL wrapper override."
-        }
-        $case6LogAPath = Get-LatestLog -LogsDir $case6LogsDir
-        $case6LogA = Get-Content -LiteralPath $case6LogAPath -Raw
-        Assert-Contains $case6LogA "Mode=Local" "Case 6A log should show local mode."
-        Assert-NotContains $case6LogA "Configured chatgpt.cliExecutable=" "Case 6A should not configure cliExecutable wrapper."
-
-        # Matrix B: VS Code local Windows, Codex in WSL (Run in WSL = true)
-        Set-Case6Config -UseRemoteWsl $false -CodexRunInWsl $true
-        $case6LocalWithWsl = Invoke-RunnerWithMockCode -RunnerPath $case6Runner
-        Assert-True ($case6LocalWithWsl.ExitCode -eq 0) ("Case 6B local/WSL failed. Output: " + $case6LocalWithWsl.Output)
-        Assert-Contains $case6LocalWithWsl.Output "mock-code --new-window --user-data-dir" "Case 6B should use isolated user-data-dir launch."
-        Assert-True (Test-Path -LiteralPath $case6Wrapper -PathType Leaf) "Case 6B wrapper file not generated."
-        $case6ProfileWithWsl = Get-Content -LiteralPath $case6ProfileSettings -Raw | ConvertFrom-Json
-        $case6CliWithWsl = [string]$case6ProfileWithWsl.'chatgpt.cliExecutable'
-        Assert-Contains $case6CliWithWsl "/tmp/csi-windows-tests-wsl-" "Case 6B cliExecutable should map to WSL Linux path."
-        Assert-Contains $case6CliWithWsl "/.vsc_launcher/codex-wsl-wrapper.sh" "Case 6B cliExecutable should point to wrapper script."
-        $case6LogBPath = Get-LatestLog -LogsDir $case6LogsDir
-        $case6LogB = Get-Content -LiteralPath $case6LogBPath -Raw
-        Assert-Contains $case6LogB "Configured chatgpt.cliExecutable=" "Case 6B should configure cliExecutable wrapper."
-        Assert-Contains $case6LogB "CODEX_HOME=" "Case 6B log should include CODEX_HOME entry."
-
-        # Matrix C: VS Code in Remote WSL, Codex local flag (Run in WSL = false)
-        Set-Case6Config -UseRemoteWsl $true -CodexRunInWsl $false
-        $case6RemoteNoWsl = Invoke-ExternalPowerShellScript -ScriptPath $case6Runner -Arguments @("-Log")
-        Assert-Case6RemoteResult -Result $case6RemoteNoWsl -Label "Case 6C remote/no-WSL"
-        $case6LogCPath = Get-LatestLog -LogsDir $case6LogsDir
-        $case6LogC = Get-Content -LiteralPath $case6LogCPath -Raw
-        Assert-Contains $case6LogC ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6C log should show remote WSL mode."
-        Assert-Contains $case6LogC "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6C should log Linux target path."
-        Assert-Contains $case6LogC "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode." "Case 6C should skip isolated user-data-dir in remote mode."
-
-        # Matrix D: VS Code in Remote WSL, Codex in WSL flag (Run in WSL = true)
-        Set-Case6Config -UseRemoteWsl $true -CodexRunInWsl $true
-        $case6RemoteWithWsl = Invoke-ExternalPowerShellScript -ScriptPath $case6Runner -Arguments @("-Log")
-        Assert-Case6RemoteResult -Result $case6RemoteWithWsl -Label "Case 6D remote/WSL"
-        $case6LogDPath = Get-LatestLog -LogsDir $case6LogsDir
-        $case6LogD = Get-Content -LiteralPath $case6LogDPath -Raw
-        Assert-Contains $case6LogD ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6D log should show remote WSL mode."
-        Assert-Contains $case6LogD "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6D should log Linux target path."
       } finally {
         if ([string]::IsNullOrWhiteSpace($case6ForceNoWsl)) {
           Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue

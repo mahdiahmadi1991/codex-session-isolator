@@ -29,8 +29,11 @@ Session visibility and credentials:
 
 If you use the extension layer (`extension/`), run these commands from command palette:
 
-- `Codex Session Isolator: Initialize Launcher`
+- Primary Command Palette commands:
+- `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- Utility commands (available for direct use but hidden from the default Command Palette list):
+- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -118,11 +121,11 @@ Wizard behavior:
   - local Windows path: `Launch VS Code in Remote WSL mode = No`
   - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project` is prompted only when Remote WSL mode is `Yes` (default `Yes`)
-  - WSL distro default: Windows default distro (`wsl --status`) when prompted
+  - WSL distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro (`wsl --status`)
   - `Ignore Codex chat sessions in gitignore`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
-- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it.
+- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it, and instead uses a project-scoped `VSCODE_AGENT_FOLDER` under `.vsc_launcher/vscode-agent` so the WSL VS Code server (and Codex child processes) stay isolated per project.
 - For local Windows + Codex-in-WSL mode, automatically sets profile-scoped `chatgpt.cliExecutable` to a generated WSL wrapper so Codex app-server receives project `CODEX_HOME`.
 
 ## Windows

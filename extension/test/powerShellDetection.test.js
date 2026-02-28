@@ -68,3 +68,22 @@ test("non-Windows checks pwsh before powershell", async () => {
   assert.equal(result.command, "powershell");
   assert.deepEqual(calls, ["pwsh", "powershell"]);
 });
+
+test("WSL falls back to Windows PowerShell runtimes after Linux candidates", async () => {
+  const calls = [];
+  const probe = async (command) => {
+    calls.push(command);
+    if (command === "pwsh.exe") {
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: `${command} unavailable` };
+  };
+
+  const result = await detectPowerShellCommand(
+    "linux",
+    probe,
+    { WSL_DISTRO_NAME: "Ubuntu-24.04", WSL_INTEROP: "/run/WSL/1_interop" }
+  );
+  assert.equal(result.command, "pwsh.exe");
+  assert.deepEqual(calls, ["pwsh", "powershell", "pwsh.exe"]);
+});

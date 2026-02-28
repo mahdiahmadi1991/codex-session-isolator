@@ -69,6 +69,6 @@ if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
     & $wizardPath
   }
 }
-exit $LASTEXITCODE
+exit 0
 
 

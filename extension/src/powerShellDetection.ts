@@ -19,9 +19,24 @@ export type PowerShellDetectionResult = {
 
 const PROBE_ARGS = ["-NoLogo", "-NoProfile", "-Command", "exit 0"];
 
-export function getPowerShellCandidates(platform: NodeJS.Platform): string[] {
+function isWslEnvironment(env: NodeJS.ProcessEnv | undefined): boolean {
+  if (!env) {
+    return false;
+  }
+
+  return Boolean(env.WSL_DISTRO_NAME && env.WSL_INTEROP);
+}
+
+export function getPowerShellCandidates(
+  platform: NodeJS.Platform,
+  env?: NodeJS.ProcessEnv
+): string[] {
   if (platform === "win32") {
     return ["pwsh", "powershell.exe"];
+  }
+
+  if (isWslEnvironment(env)) {
+    return ["pwsh", "powershell", "pwsh.exe", "powershell.exe"];
   }
 
   return ["pwsh", "powershell"];
@@ -33,12 +48,13 @@ export function getPowerShellProbeArgs(): string[] {
 
 export async function detectPowerShellCommand(
   platform: NodeJS.Platform,
-  probe: CommandProbe
+  probe: CommandProbe,
+  env?: NodeJS.ProcessEnv
 ): Promise<PowerShellDetectionResult> {
   const attempts: PowerShellDetectionAttempt[] = [];
   const probeArgs = getPowerShellProbeArgs();
 
-  for (const candidate of getPowerShellCandidates(platform)) {
+  for (const candidate of getPowerShellCandidates(platform, env)) {
     const result = await probe(candidate, probeArgs);
     attempts.push({
       command: candidate,
