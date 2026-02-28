@@ -27,8 +27,15 @@ jobs:
             const labels = (pr.labels || []).map((label) => label.name);
             const allowHotfix = labels.includes("allow-main-hotfix");
 
-            if (headRef === "pre-release" && headRepoFullName === currentRepoFullName) {
-              core.info("Policy passed: main promotion PR source is pre-release.");
+            const isDirectPreRelease = headRef === "pre-release";
+            const isReleaseBranch = /^release\/.+$/.test(headRef);
+
+            if ((isDirectPreRelease || isReleaseBranch) && headRepoFullName === currentRepoFullName) {
+              core.info(
+                isDirectPreRelease
+                  ? "Policy passed: main promotion PR source is pre-release."
+                  : "Policy passed: main promotion PR source is a release/* branch."
+              );
               return;
             }
 
@@ -41,7 +48,7 @@ jobs:
             }
 
             core.setFailed(
-              "PRs targeting 'main' must come from 'pre-release'. " +
+              "PRs targeting 'main' must come from 'pre-release' or 'release/*'. " +
               `Current source branch: '${headRef}'. ` +
               "For emergency fixes, add label 'allow-main-hotfix' and sync main back to pre-release after merge."
             );

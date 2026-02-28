@@ -10,6 +10,8 @@ vsc_launcher.*
 # <<< codex-session-isolator <<<
 # Runtime and local state
 *.log
+extension/*.vsix
+extension/*.vsix.sha256
 
 # IDE
 .vscode/
@@ -17,4 +19,3 @@ vsc_launcher.*
 
 # PowerShell
 *.ps1xml
-
