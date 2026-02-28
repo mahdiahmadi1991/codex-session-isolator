@@ -125,8 +125,8 @@
         },
         "codexSessionIsolator.closeWindowAfterReopen": {
           "type": "boolean",
-          "default": true,
-          "description": "Close current VS Code window after launching project launcher."
+          "default": false,
+          "description": "Close current VS Code window after launching project launcher (if disabled, current window stays open)."
         },
         "codexSessionIsolator.requireConfirmation": {
           "type": "boolean",

@@ -94,7 +94,7 @@ Wizard outputs (Windows):
 Wizard behavior:
 
 - Replaces generated launcher files if they already exist.
-- Updates a managed `.gitignore` block in target folder.
+- Updates a managed `.gitignore` block only when `.gitignore` already exists in target folder.
 - Creates safety backups before overwriting managed files:
   - `.vsc_launcher/backups/<timestamp-pid>/`
 - Always updates `.vscode/settings.json` with:

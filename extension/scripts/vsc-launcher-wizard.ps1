@@ -1008,7 +1008,6 @@ function Update-GitIgnoreBlock {
   param(
     [string]$RootPath,
     [bool]$IgnoreSessions,
-    [string]$LauncherFileName,
     [string]$MetadataDirName,
     [string[]]$AdditionalGeneratedFiles = @()
   )
@@ -1017,10 +1016,14 @@ function Update-GitIgnoreBlock {
   $startMarker = "# >>> codex-session-isolator >>>"
   $endMarker = "# <<< codex-session-isolator <<<"
 
+  if (-not (Test-Path -LiteralPath $gitignorePath -PathType Leaf)) {
+    return $false
+  }
+
   $blockLines = @(
     $startMarker
     "# Managed by Codex Session Isolator launcher wizard."
-    $LauncherFileName
+    "vsc_launcher.*"
   )
 
   if ($AdditionalGeneratedFiles.Count -gt 0) {
@@ -1052,27 +1055,26 @@ function Update-GitIgnoreBlock {
   $blockLines += $endMarker
   $newBlock = ($blockLines -join "`n") + "`n"
 
-  $current = ""
-  if (Test-Path -LiteralPath $gitignorePath -PathType Leaf) {
-    $current = Get-Content -LiteralPath $gitignorePath -Raw
-    Backup-PathIfExists -Path $gitignorePath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
-  }
+  $current = Get-Content -LiteralPath $gitignorePath -Raw
+  Backup-PathIfExists -Path $gitignorePath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
 
   if ([string]::IsNullOrEmpty($current)) {
     Set-Content -LiteralPath $gitignorePath -Value $newBlock
-    return
+    return $true
   }
 
   $pattern = "(?ms)^" + [regex]::Escape($startMarker) + ".*?^" + [regex]::Escape($endMarker) + "\s*"
   if ($current -match $pattern) {
     $updated = [regex]::Replace($current, $pattern, $newBlock)
     Set-Content -LiteralPath $gitignorePath -Value $updated
+    return $true
   } else {
     if (-not $current.EndsWith("`n")) {
       $current += "`n"
     }
     $updated = $current + "`n" + $newBlock
     Set-Content -LiteralPath $gitignorePath -Value $updated
+    return $true
   }
 }
 
@@ -2230,12 +2232,16 @@ if ($createWindowsShortcut -and $shortcutLivesInProjectRoot) {
   $additionalGeneratedFiles += $windowsWslShortcutFileName
 }
 
-Update-GitIgnoreBlock `
+$gitignoreUpdated = Update-GitIgnoreBlock `
   -RootPath $targetRoot `
   -IgnoreSessions $ignoreSessions `
-  -LauncherFileName $launcherFileName `
   -MetadataDirName $metadataDirName `
   -AdditionalGeneratedFiles $additionalGeneratedFiles
+if ($gitignoreUpdated) {
+  Write-Info "Managed .gitignore block updated."
+} else {
+  Write-Info "No .gitignore found in target root. Skipping .gitignore update."
+}
 
 $outputs = if ($platformIsWindows) {
   New-WindowsLauncherFile `

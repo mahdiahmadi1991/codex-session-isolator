@@ -313,7 +313,9 @@ try {
   $case2 = Join-Path $tmpRoot "case2-wizard-local"
   New-Item -ItemType Directory -Force -Path $case2 | Out-Null
   $ws2 = Join-Path $case2 "app.code-workspace"
+  $gitignore2 = Join-Path $case2 ".gitignore"
   Set-Content -LiteralPath $ws2 -Value '{"folders":[{"path":"."}]}' -NoNewline
+  Set-Content -LiteralPath $gitignore2 -Value "# existing ignore rules`r`n" -NoNewline
 
   Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
 
@@ -324,7 +326,6 @@ try {
   $config2 = Join-Path $meta2 "config.json"
   $defaults2 = Join-Path $meta2 "wizard.defaults.json"
   $vscodeSettings2 = Join-Path $case2 ".vscode\settings.json"
-  $gitignore2 = Join-Path $case2 ".gitignore"
 
   Assert-True (Test-Path -LiteralPath $launcher2 -PathType Leaf) "Generated launcher not found."
   Assert-True ($wslBridge2.Count -eq 0) "WSL shortcut should not be generated for local Windows targets."
@@ -424,7 +425,21 @@ try {
 
   $gitignoreText2 = Get-Content -LiteralPath $gitignore2 -Raw
   Assert-Contains $gitignoreText2 "# >>> codex-session-isolator >>>" "Managed gitignore block start missing."
+  Assert-Contains $gitignoreText2 "vsc_launcher.*" "Expected launcher ignore entry missing."
   Assert-Contains $gitignoreText2 ".vsc_launcher/" "Expected metadata folder ignore entry missing."
+
+  Write-Host "[test] Case 2.3: wizard does not create .gitignore when file is absent"
+  $case23 = Join-Path $tmpRoot "case23-no-gitignore"
+  New-Item -ItemType Directory -Force -Path $case23 | Out-Null
+  Set-Content -LiteralPath (Join-Path $case23 "app.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
+
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case23 -Responses @("y") -DebugMode -UseTargetFlag
+
+  $case23GitignorePath = Join-Path $case23 ".gitignore"
+  Assert-True (-not (Test-Path -LiteralPath $case23GitignorePath -PathType Leaf)) "Case 2.3 should not create .gitignore when absent."
+  $case23WizardLogPath = Get-LatestLog -LogsDir (Join-Path $case23 ".vsc_launcher\logs") -Pattern "wizard-*.log"
+  $case23WizardLog = Get-Content -LiteralPath $case23WizardLogPath -Raw
+  Assert-Contains $case23WizardLog "No .gitignore found in target root. Skipping .gitignore update." "Case 2.3 wizard log should report skipped .gitignore update."
 
   Write-Host "[test] Case 2.1: wizard creates safety backups before overwriting files"
   Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
@@ -598,6 +613,8 @@ try {
         & wsl.exe -d $case6Distro -- mkdir -p $case6LinuxRoot | Out-Null
         New-Item -ItemType Directory -Force -Path $case6UncRoot | Out-Null
         Set-Content -LiteralPath $case6WorkspacePath -Value '{"folders":[{"path":"."}]}' -NoNewline
+        $case6Gitignore = Join-Path $case6UncRoot ".gitignore"
+        Set-Content -LiteralPath $case6Gitignore -Value "# wsl unc case`r`n" -NoNewline
 
         Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
         $case6Distros = @(
@@ -620,12 +637,11 @@ try {
         $case6Wrapper = Join-Path $case6UncRoot ".vsc_launcher\codex-wsl-wrapper.sh"
         $case6ProfileSettings = Join-Path $case6UncRoot ".vsc_launcher\vscode-user-data\User\settings.json"
         $case6LogsDir = Join-Path $case6UncRoot ".vsc_launcher\logs"
-        $case6Gitignore = Join-Path $case6UncRoot ".gitignore"
 
         Assert-True (Test-Path -LiteralPath $case6Runner -PathType Leaf) "Case 6 runner not generated."
         Assert-True (Test-Path -LiteralPath $case6Config -PathType Leaf) "Case 6 config not generated."
         Assert-True ($case6BridgeCandidates.Count -eq 1) "Case 6 Windows WSL shortcut not generated."
-        Assert-True (Test-Path -LiteralPath $case6Gitignore -PathType Leaf) "Case 6 .gitignore not generated."
+        Assert-True (Test-Path -LiteralPath $case6Gitignore -PathType Leaf) "Case 6 .gitignore should remain present."
 
         $case6ConfigDefaults = Get-Content -LiteralPath $case6Config -Raw | ConvertFrom-Json
         Assert-True ([bool]$case6ConfigDefaults.useRemoteWsl) "Case 6 default should enable Remote WSL."
@@ -633,6 +649,7 @@ try {
         Assert-True ($case6ConfigDefaults.wslDistro -eq $case6Distro) "Case 6 default distro should match Windows default distro."
 
         $case6GitignoreText = Get-Content -LiteralPath $case6Gitignore -Raw
+        Assert-Contains $case6GitignoreText "vsc_launcher.*" "Case 6 gitignore missing launcher ignore entry."
         Assert-Contains $case6GitignoreText $case6BridgeCandidates[0].Name "Case 6 gitignore missing Windows WSL shortcut entry."
         Assert-Contains $case6GitignoreText ".codex/*" "Case 6 default should keep sessions tracked (.codex/* strategy)."
         Assert-Contains $case6GitignoreText "!.codex/sessions/**" "Case 6 default should keep sessions unignored."

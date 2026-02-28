@@ -1003,12 +1003,13 @@ async function reopenWithLauncher(
     async (progress) => {
       progress.report({ message: "Starting launcher..." });
       if (process.platform === "win32") {
-        const child = spawn("cmd.exe", ["/c", launcherPath], {
-          cwd: targetRoot,
-          detached: true,
-          stdio: "ignore"
-        });
-        child.unref();
+        const launch = await trySpawnDetachedWindowsLauncher(launcherPath, targetRoot);
+        if (!launch.ok) {
+          appendReopenLog(`Windows launcher start failed (${launch.reason})`);
+          return false;
+        }
+
+        appendReopenLog("Launcher started using cmd.exe.");
         return true;
       }
 
@@ -1042,17 +1043,20 @@ async function reopenWithLauncher(
   );
 
   if (!launched) {
-    void vscode.window.showErrorMessage(
-      "Failed to reopen with launcher using bash/zsh/sh. Ensure at least one shell is installed and check 'Codex Session Isolator' output logs."
-    );
+    const message = process.platform === "win32"
+      ? "Failed to start launcher via cmd.exe. Check 'Codex Session Isolator' output logs."
+      : "Failed to reopen with launcher using bash/zsh/sh. Ensure at least one shell is installed and check 'Codex Session Isolator' output logs.";
+    void vscode.window.showErrorMessage(message);
     return false;
   }
 
-  const shouldClose = getBooleanSetting("closeWindowAfterReopen", true);
+  const shouldClose = getBooleanSetting("closeWindowAfterReopen", false);
   if (shouldClose) {
     await vscode.commands.executeCommand("workbench.action.closeWindow");
   } else {
-    void vscode.window.showInformationMessage("Launcher started successfully.");
+    void vscode.window.showInformationMessage(
+      "Launcher started successfully. You can close this window after the new launcher window opens."
+    );
   }
 
   return true;
@@ -1077,6 +1081,31 @@ async function trySpawnDetached(
       cwd,
       detached: true,
       stdio: "ignore"
+    });
+
+    child.once("error", (error: Error) => {
+      const message = error.message || "unknown spawn error";
+      resolve({ ok: false, reason: message });
+    });
+
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ ok: true, reason: "" });
+    });
+  });
+}
+
+async function trySpawnDetachedWindowsLauncher(
+  launcherPath: string,
+  cwd: string
+): Promise<{ ok: boolean; reason: string }> {
+  return new Promise<{ ok: boolean; reason: string }>((resolve) => {
+    const command = `"${launcherPath.replace(/"/g, "\"\"")}"`;
+    const child = spawn("cmd.exe", ["/d", "/s", "/c", command], {
+      cwd,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
     });
 
     child.once("error", (error: Error) => {
@@ -1123,7 +1152,7 @@ async function confirmLauncherChanges(targetRoot: string): Promise<boolean> {
         "This runs the bundled setup wizard and updates project-local files:\n" +
         "- .vscode/settings.json\n" +
         "- workspace settings in *.code-workspace\n" +
-        "- .gitignore managed block\n" +
+        "- .gitignore managed block (if .gitignore already exists)\n" +
         "- vsc_launcher.* and .vsc_launcher/*"
     },
     "Continue"

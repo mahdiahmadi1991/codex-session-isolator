@@ -31,7 +31,7 @@ Expected:
 - If WSL is available, wizard prompts for WSL options and Codex WSL setting.
 - Wizard always prompts for session ignore policy.
 - It creates/replaces one launcher file in target directory plus `.vsc_launcher` metadata.
-- It updates managed `.gitignore` block.
+- If `.gitignore` already exists, it updates managed `.gitignore` block.
 - It writes `.vscode/settings.json` with:
   - `chatgpt.openOnStartup = true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux = <selected>`

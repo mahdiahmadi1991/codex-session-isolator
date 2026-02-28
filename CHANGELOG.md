@@ -25,6 +25,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Wizard now updates `.gitignore` only when the file already exists in target root; it no longer creates `.gitignore` automatically for non-git projects.
+- Wizard managed ignore entry now uses `vsc_launcher.*` so Windows (`.bat`) and Unix (`.sh`) launchers are both covered consistently.
+- Extension reopen flow now validates Windows launcher spawn with explicit `cmd.exe` start diagnostics, and `codexSessionIsolator.closeWindowAfterReopen` default is now `false` (keep current window open unless explicitly enabled).
 - README and usage docs now include extension-based workflow.
 - Fixed Windows canonical launcher WSL path execution to escape Bash command substitutions correctly in PowerShell here-strings (prevents `printf` PowerShell resolution error for `\\wsl$...` targets).
 - Fixed Windows canonical launcher Remote WSL invocation to execute a temporary UTF-8 bash script file instead of inline `bash -lc` multiline text, avoiding quoting/truncation syntax errors.

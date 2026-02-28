@@ -20,12 +20,12 @@ Recommended fresh-project flow:
 
 1. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
 2. Complete wizard prompts.
-3. VS Code reopens automatically with generated launcher.
+3. A new VS Code window starts via generated launcher (current window closes only if configured).
 
 ## Settings
 
 - `codexSessionIsolator.debugWizardByDefault` (default: `false`)
-- `codexSessionIsolator.closeWindowAfterReopen` (default: `true`)
+- `codexSessionIsolator.closeWindowAfterReopen` (default: `false`)
 - `codexSessionIsolator.requireConfirmation` (default: `true`)
 
 ## Development
