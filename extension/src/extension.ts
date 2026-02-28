@@ -81,6 +81,23 @@ function isWindowsPowerShellExecutable(command: string): boolean {
   return /(?:^|[\\/])(pwsh|powershell)(?:\.exe)?$/i.test(command) && /\.exe$/i.test(command);
 }
 
+function inferWslDistroFromTargetPath(targetPath: string, platform: NodeJS.Platform): string | undefined {
+  if (!targetPath) {
+    return undefined;
+  }
+
+  const uncMatch = targetPath.match(/^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\/i);
+  if (uncMatch?.[1]) {
+    return uncMatch[1].trim();
+  }
+
+  if (platform !== "win32" && targetPath.startsWith("/") && process.env.WSL_DISTRO_NAME) {
+    return process.env.WSL_DISTRO_NAME.trim();
+  }
+
+  return undefined;
+}
+
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
   if (typeof value === "boolean") {
@@ -529,7 +546,12 @@ async function buildWizardResponses(
 
     if (useRemoteWsl) {
       const distros = await getWslDistros();
-      if (distros.length > 1) {
+      const inferredDistro = inferWslDistroFromTargetPath(effectiveTargetPath, effectivePlatform);
+      const inferredDistroIndex = inferredDistro
+        ? distros.findIndex((name) => name.toLowerCase() === inferredDistro.toLowerCase())
+        : -1;
+
+      if (distros.length > 1 && inferredDistroIndex < 0) {
         const defaultDistro = await getDefaultWslDistro();
         let defaultIndex = distros.findIndex((name) =>
           !!defaultDistro && name.toLowerCase() === defaultDistro.toLowerCase()

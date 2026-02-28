@@ -71,7 +71,7 @@ Default wizard answers on Windows + WSL are context-aware:
 - Local Windows path: Remote WSL launch `No`
 - WSL UNC path (`\\wsl$\...`): Remote WSL launch `Yes`
 - Codex run in WSL: prompted only when Remote WSL launch is `Yes` (default `Yes`)
-- Distro default: Windows default distro
+- Distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro
 - Ignore Codex chat sessions in gitignore: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.

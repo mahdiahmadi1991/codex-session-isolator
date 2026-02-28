@@ -118,7 +118,7 @@ Wizard behavior:
   - local Windows path: `Launch VS Code in Remote WSL mode = No`
   - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project` is prompted only when Remote WSL mode is `Yes` (default `Yes`)
-  - WSL distro default: Windows default distro (`wsl --status`) when prompted
+  - WSL distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro (`wsl --status`)
   - `Ignore Codex chat sessions in gitignore`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.

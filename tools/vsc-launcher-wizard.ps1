@@ -11,7 +11,7 @@ $script:BackupPathIndex = @{}
 
 function Write-Info {
   param([string]$Message)
-  Write-Host "[wizard] $Message"
+  Write-Host ("[wizard] {0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message)
   if (-not [string]::IsNullOrWhiteSpace($script:WizardLogPath)) {
     $line = "{0} [wizard] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message
     Add-Content -LiteralPath $script:WizardLogPath -Value $line
@@ -247,6 +247,25 @@ function Test-IsWslLinuxEnvironment {
   }
 
   return $true
+}
+
+function Get-WslDistroHintFromTargetPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ""
+  }
+
+  $trimmed = ($Path -replace [string][char]0, "").Trim()
+  if ($trimmed -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]([^\\]+)[\\]') {
+    return (Normalize-WslName -Name $Matches[1])
+  }
+
+  if ($trimmed -match '^/' -and -not [string]::IsNullOrWhiteSpace($env:WSL_DISTRO_NAME)) {
+    return (Normalize-WslName -Name $env:WSL_DISTRO_NAME)
+  }
+
+  return ""
 }
 
 function Escape-BashSingleQuoted {
@@ -2107,6 +2126,22 @@ if ($platformIsWindows -and $wslAvailable) {
     Write-Info ("Detected WSL distros: {0}" -f (($distros | ForEach-Object { "'$_'" }) -join ", "))
     if ($distros.Count -eq 0) {
       throw "No WSL distro found. Install WSL or choose local mode."
+    }
+
+    $targetDistroHint = Get-WslDistroHintFromTargetPath -Path $TargetPath
+    $targetDistroHintIndex = -1
+    if (-not [string]::IsNullOrWhiteSpace($targetDistroHint)) {
+      for ($i = 0; $i -lt $distros.Count; $i++) {
+        if ($distros[$i] -ieq $targetDistroHint) {
+          $targetDistroHintIndex = $i
+          break
+        }
+      }
+    }
+
+    if ($targetDistroHintIndex -ge 0) {
+      $wslDistro = $distros[$targetDistroHintIndex]
+      Write-Info ("Using WSL distro inferred from target path: {0}" -f $wslDistro)
     } elseif ($distros.Count -eq 1) {
       $wslDistro = $distros[0]
       Write-Info ("Using WSL distro (single detected): {0}" -f $wslDistro)
@@ -2301,20 +2336,17 @@ if ($createWindowsShortcut -and -not [string]::IsNullOrWhiteSpace($windowsShortc
   }
 
   if ($platformIsWindows) {
-    if ($isWslUncProjectTarget) {
-      $projectLauncherPath = $outputs.LauncherPath
-      New-WindowsWslShortcutForWindowsTarget `
-        -ShortcutPath $windowsShortcutPathForGeneration `
-        -ProjectLauncherPath $projectLauncherPath `
-        -IconLocation $windowsShortcutIconLocation
+    $shortcutLinuxProjectRoot = if ($isWslUncProjectTarget) {
+      Convert-WindowsPathToLinuxPath -InputPath $targetRoot -Distro $shortcutDistroForGeneration
     } else {
-      New-WindowsWslShortcutForLinuxTarget `
-        -ShortcutPath $windowsShortcutPathForGeneration `
-        -LinuxProjectRoot $targetRoot `
-        -WslDistro $shortcutDistroForGeneration `
-        -LinuxUser $shortcutLinuxUserForGeneration `
-        -IconLocation $windowsShortcutIconLocation
+      $targetRoot
     }
+    New-WindowsWslShortcutForLinuxTarget `
+      -ShortcutPath $windowsShortcutPathForGeneration `
+      -LinuxProjectRoot $shortcutLinuxProjectRoot `
+      -WslDistro $shortcutDistroForGeneration `
+      -LinuxUser $shortcutLinuxUserForGeneration `
+      -IconLocation $windowsShortcutIconLocation
   } else {
     New-WindowsWslShortcutForLinuxTarget `
       -ShortcutPath $windowsShortcutPathForGeneration `
