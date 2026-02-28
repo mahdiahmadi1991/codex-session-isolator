@@ -60,6 +60,14 @@ const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
 const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
 const WIZARD_TIMEOUT_MS = 120_000;
 
+function isWslEnvironmentRuntime(): boolean {
+  return Boolean(process.env.WSL_DISTRO_NAME && process.env.WSL_INTEROP);
+}
+
+function isWindowsPowerShellExecutable(command: string): boolean {
+  return /(?:^|[\\/])(pwsh|powershell)(?:\.exe)?$/i.test(command) && /\.exe$/i.test(command);
+}
+
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
   if (typeof value === "boolean") {
@@ -206,8 +214,24 @@ async function initializeLauncherForTarget(
   const psCommand = psDetection.command;
 
   const debugMode = getBooleanSetting("debugWizardByDefault", false);
+  let scriptPathForCommand = scriptPath;
+  let targetRootForCommand = targetRoot;
+  if (isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand)) {
+    const convertedScriptPath = await convertWslPathToWindows(scriptPath);
+    const convertedTargetRoot = await convertWslPathToWindows(targetRoot);
+    if (!convertedScriptPath || !convertedTargetRoot) {
+      void vscode.window.showErrorMessage(
+        "Failed to convert WSL paths for Windows PowerShell execution. Ensure 'wslpath' is available, then retry."
+      );
+      return false;
+    }
 
-  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-TargetPath", targetRoot];
+    scriptPathForCommand = convertedScriptPath;
+    targetRootForCommand = convertedTargetRoot;
+    output.appendLine(`[extension] Using Windows PowerShell path translation for WSL target: ${targetRootForCommand}`);
+  }
+
+  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPathForCommand, "-TargetPath", targetRootForCommand];
   if (debugMode) {
     args.push("-DebugMode");
   }
@@ -710,6 +734,16 @@ async function runCommand(command: string, args: string[]): Promise<ProcessResul
       resolve({ code: code ?? 1, stdout, stderr });
     });
   });
+}
+
+async function convertWslPathToWindows(inputPath: string): Promise<string | undefined> {
+  const result = await runCommand("wslpath", ["-w", inputPath]);
+  if (result.code !== 0) {
+    return undefined;
+  }
+
+  const converted = result.stdout.trim();
+  return converted.length > 0 ? converted : undefined;
 }
 
 async function pickTargetRoot(): Promise<string | undefined> {
