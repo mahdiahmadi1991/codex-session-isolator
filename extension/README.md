@@ -25,8 +25,11 @@ When launched through generated launcher:
 
 ## Commands
 
-- `Codex Session Isolator: Initialize Launcher`
+- Primary Command Palette commands:
+- `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- Utility commands (kept available but hidden from the default Command Palette list):
+- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -35,13 +38,14 @@ When launched through generated launcher:
 1. Install extension `2ma.codex-session-isolator` from VS Code Marketplace.
 2. Open your project folder/workspace in VS Code.
 3. Setup launcher:
-   - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
-   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then run `Codex Session Isolator: Reopen With Launcher`.
+   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then confirm the final reopen prompt for the current project.
 4. At command start, choose target scope:
    - `Current project (recommended)`
    - `Another project`
 5. If `Another project` is selected, extension applies setup to that folder and shows completion report without reopening/closing current window.
-6. Verify in terminal:
+6. If `Current project` is selected, the extension asks whether to reopen with the generated launcher and closes the current window only after you confirm.
+7. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
 
@@ -105,7 +109,6 @@ To remove generated artifacts safely from one project:
 
 - `codexSessionIsolator.debugWizardByDefault`
 - `codexSessionIsolator.closeWindowAfterReopen`
-- `codexSessionIsolator.requireConfirmation`
 
 ## Security and Privacy
 

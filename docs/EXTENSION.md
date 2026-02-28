@@ -10,7 +10,10 @@ The extension provides a hybrid UX:
 
 ## Commands
 
-- `Codex Session Isolator: Setup (Initialize & Reopen)`
+- Primary Command Palette commands:
+  - `Codex Session Isolator: Setup Launcher`
+  - `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
@@ -18,15 +21,15 @@ The extension provides a hybrid UX:
 
 Recommended fresh-project flow:
 
-1. Run `Codex Session Isolator: Setup (Initialize & Reopen)`.
+1. Run `Codex Session Isolator: Setup Launcher`.
 2. Complete wizard prompts.
-3. A new VS Code window starts via generated launcher (current window closes only if configured).
+3. When setup finishes for the current project, the extension asks whether to reopen immediately with the launcher.
+4. If you confirm, the current VS Code window closes and the launcher opens a fresh isolated window.
 
 ## Settings
 
 - `codexSessionIsolator.debugWizardByDefault` (default: `false`)
 - `codexSessionIsolator.closeWindowAfterReopen` (default: `false`)
-- `codexSessionIsolator.requireConfirmation` (default: `true`)
 
 ## Development
 
@@ -46,7 +49,8 @@ Run Extension Development Host:
 - Extension requires PowerShell (`powershell` or `pwsh`).
 - On Windows, extension prefers `pwsh` (PowerShell 7) and falls back to `powershell.exe` after a startup probe check.
 - On Windows, WSL-related prompts are shown only when WSL is available.
-- On macOS/Linux, `Reopen With Launcher` tries `bash`, then `zsh`, then `sh`, and logs shell fallback/chmod warnings in the extension output channel.
+- On macOS/Linux, `Reopen With Launcher` first dispatches the launcher through a detached `bash`/`zsh` wrapper, then falls back to direct executable launch and shell invocation, and logs fallback details in the extension output channel.
+- On WSL, if a Windows shortcut was created for the project, `Reopen With Launcher` tries launching that shortcut first; if it is unavailable, launcher execution falls back to the Unix launcher path.
 - Extension wizard default answers on Windows+WSL:
   - Remote WSL launch: `Yes`
   - Codex run in WSL: `Yes`

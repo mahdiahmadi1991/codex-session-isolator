@@ -9,13 +9,27 @@ $script:BackupSessionId = $null
 $script:BackupRootPath = $null
 $script:BackupPathIndex = @{}
 
-function Write-Info {
-  param([string]$Message)
-  Write-Host ("[wizard] {0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message)
+function Get-LogTimestamp {
+  return (Get-Date).ToUniversalTime().ToString("o")
+}
+
+function Write-Log {
+  param(
+    [ValidateSet("INFO", "WARN", "ERROR")]
+    [string]$Level = "INFO",
+    [string]$Message
+  )
+
+  $line = "{0} [{1}] [wizard] {2}" -f (Get-LogTimestamp), $Level, $Message
+  Write-Host $line
   if (-not [string]::IsNullOrWhiteSpace($script:WizardLogPath)) {
-    $line = "{0} [wizard] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message
     Add-Content -LiteralPath $script:WizardLogPath -Value $line
   }
+}
+
+function Write-Info {
+  param([string]$Message)
+  Write-Log -Level "INFO" -Message $Message
 }
 
 function Read-NonEmpty {
@@ -1155,7 +1169,7 @@ function Initialize-WizardLogging {
   }
   $null = Ensure-Directory -Path $logsDir
   $script:WizardLogPath = Join-Path $logsDir ("wizard-{0}-{1}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"), $PID)
-  Set-Content -LiteralPath $script:WizardLogPath -Value ("{0} [wizard] start" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"))
+  Set-Content -LiteralPath $script:WizardLogPath -Value ("{0} [INFO] [wizard] start" -f (Get-LogTimestamp))
 }
 
 function Get-WizardDefaults {
@@ -1923,9 +1937,10 @@ function New-WindowsWslShortcutForLinuxTarget {
   if (-not [string]::IsNullOrWhiteSpace($normalizedUser)) {
     $argumentParts += "-u $normalizedUser"
   }
-  $argumentParts += "-- $linuxLauncherPath"
+  $escapedLauncherPath = Escape-BashSingleQuoted -Value $linuxLauncherPath
+  $argumentParts += "-- bash -lc `"bash '" + $escapedLauncherPath + "'`""
   $wslArguments = ($argumentParts -join " ")
-  $wslInvocation = "$wslExePath $wslArguments"
+  $wslInvocation = "`"$wslExePath`" $wslArguments"
   # Route through cmd.exe because direct wsl.exe targets in .lnk can no-op on some Windows setups.
   $arguments = "/d /c `"$wslInvocation`""
 
@@ -1945,7 +1960,8 @@ function New-UnixLauncherFile {
     [string]$MetadataDirName,
     [string]$LaunchMode,
     [string]$WorkspaceRelativePath,
-    [bool]$EnableLoggingByDefault
+    [bool]$EnableLoggingByDefault,
+    [string]$WslDistro = ""
   )
 
   $scriptPath = Join-Path $RootPath "$LauncherBaseName.sh"
@@ -2013,7 +2029,15 @@ if ! command -v code >/dev/null 2>&1; then
   exit 127
 fi
 
-code --new-window "$launch_target"
+if command -v setsid >/dev/null 2>&1; then
+  setsid -f code --new-window "$launch_target" >/dev/null 2>&1
+elif command -v nohup >/dev/null 2>&1; then
+  nohup code --new-window "$launch_target" >/dev/null 2>&1 &
+else
+  code --new-window "$launch_target" >/dev/null 2>&1 &
+fi
+
+sleep 1
 '@
 
   $content = $template.Replace("__META_DIR__", $MetadataDirName)
@@ -2021,9 +2045,24 @@ code --new-window "$launch_target"
 
   Backup-PathIfExists -Path $scriptPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
   [System.IO.File]::WriteAllText($scriptPath, $content, $utf8NoBom)
-  try {
-    & chmod +x $scriptPath | Out-Null
-  } catch {
+  if (($env:OS -eq "Windows_NT") -and (Test-IsWslUncPath -Path $scriptPath)) {
+    try {
+      $linuxScriptPath = Convert-WindowsPathToLinuxPath -InputPath $scriptPath -Distro $WslDistro
+      $escapedScriptPath = Escape-BashSingleQuoted -Value $linuxScriptPath
+      $wslArgs = @()
+      if ([string]::IsNullOrWhiteSpace($WslDistro)) {
+        $wslArgs = @("--", "bash", "-lc", ("chmod +x '" + $escapedScriptPath + "'"))
+      } else {
+        $wslArgs = @("-d", $WslDistro, "--", "bash", "-lc", ("chmod +x '" + $escapedScriptPath + "'"))
+      }
+      $null = & wsl.exe @wslArgs 2>&1
+    } catch {
+    }
+  } else {
+    try {
+      & chmod +x $scriptPath | Out-Null
+    } catch {
+    }
   }
 
   return @{
@@ -2036,7 +2075,7 @@ code --new-window "$launch_target"
 $platformIsWindows = $env:OS -eq "Windows_NT"
 $launcherBaseName = "vsc_launcher"
 $metadataDirName = ".vsc_launcher"
-$launcherFileName = if ($platformIsWindows) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
+$launcherFileName = ""
 $enableLoggingByDefault = [bool]$DebugMode
 $wslAvailable = $platformIsWindows -and (Test-WslAvailable)
 $deferredFallbackInfo = $null
@@ -2065,7 +2104,9 @@ $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
 $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Path -Parent $resolvedTarget }
 $isWslUncProjectTarget = $platformIsWindows -and (Test-IsWslUncPath -Path $resolvedTarget)
 $isWslLinuxProjectTarget = (Test-IsWslLinuxEnvironment) -and $resolvedTarget.StartsWith("/")
+$isLinuxHostedProjectTarget = $isWslUncProjectTarget -or $isWslLinuxProjectTarget
 $shouldGenerateWindowsWslShortcut = $isWslUncProjectTarget -or $isWslLinuxProjectTarget
+$launcherFileName = if ($isLinuxHostedProjectTarget) { "$launcherBaseName.sh" } elseif ($platformIsWindows) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
 $windowsWslShortcutFileName = if ($shouldGenerateWindowsWslShortcut) {
   Get-WindowsWslShortcutFileName -LauncherBaseName $launcherBaseName -RootPath $targetRoot
 } else {
@@ -2346,7 +2387,24 @@ if ($gitignoreUpdated) {
   Write-Info "No .gitignore found in target root. Skipping .gitignore update."
 }
 
-$outputs = if ($platformIsWindows) {
+$staleLauncherFileName = if ($launcherFileName.EndsWith(".sh")) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
+$staleLauncherPath = Join-Path $targetRoot $staleLauncherFileName
+if (Test-Path -LiteralPath $staleLauncherPath -PathType Leaf) {
+  Backup-PathIfExists -Path $staleLauncherPath -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
+  Remove-Item -LiteralPath $staleLauncherPath -Force -ErrorAction SilentlyContinue
+  Write-Info ("Removed stale launcher file: {0}" -f $staleLauncherFileName)
+}
+
+$outputs = if ($isLinuxHostedProjectTarget) {
+  New-UnixLauncherFile `
+    -RootPath $targetRoot `
+    -LauncherBaseName $launcherBaseName `
+    -MetadataDirName $metadataDirName `
+    -LaunchMode $launchMode `
+    -WorkspaceRelativePath $workspaceRelativePath `
+    -EnableLoggingByDefault $enableLoggingByDefault `
+    -WslDistro $wslDistro
+} elseif ($platformIsWindows) {
   New-WindowsLauncherFile `
     -RootPath $targetRoot `
     -LauncherBaseName $launcherBaseName `
@@ -2364,7 +2422,8 @@ $outputs = if ($platformIsWindows) {
     -MetadataDirName $metadataDirName `
     -LaunchMode $launchMode `
     -WorkspaceRelativePath $workspaceRelativePath `
-    -EnableLoggingByDefault $enableLoggingByDefault
+    -EnableLoggingByDefault $enableLoggingByDefault `
+    -WslDistro $wslDistro
 }
 
 $windowsShortcutIconLocation = if ($shouldGenerateWindowsWslShortcut) { Get-WindowsVsCodeIconLocation } else { "" }
