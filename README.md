@@ -19,6 +19,12 @@ When launched through this tool, `CODEX_HOME` is set to:
 - the folder itself (if target is a directory)
 - the parent directory (if target is any file)
 
+Launch target resolution:
+
+- If target is a folder and `codex-session-isolator.code-workspace` exists, launcher opens that workspace file.
+- Otherwise, if target folder has exactly one `*.code-workspace` file, launcher opens that workspace file.
+- Otherwise, launcher opens the folder target directly.
+
 This isolates Codex state per project without changing global/default behavior.
 
 Practical effect:
@@ -95,23 +101,28 @@ Note: direct wizard execution requires PowerShell (`powershell` or `pwsh`).
 The wizard asks for:
 
 - Remote WSL mode
-- whether Codex should run in WSL for this project
+- whether Codex should run in WSL for this project (only when Remote WSL mode is `Yes`)
+- whether to create an extra Windows Desktop shortcut copy (only for WSL-hosted targets)
 - whether Codex chat sessions should be git-ignored
 
 Wizard defaults:
 
-- If exactly one workspace file exists in target path, it is selected automatically.
+- If exactly one workspace file exists in target root, it is selected automatically.
 - If no workspace file exists, folder target is used.
-- It asks workspace selection only when more than one workspace file is found.
+- It asks workspace selection only when more than one workspace file is found in target root.
 - If WSL is not installed/available, WSL-related questions are skipped automatically.
 - Wizard remembers your previous answers per target (`.vsc_launcher/wizard.defaults.json`) and reuses them as defaults.
-- First-run defaults on Windows (when WSL is available) are:
-  - `Launch VS Code in Remote WSL mode = Yes`
+- First-run defaults on Windows (when WSL is available) are context-aware:
+  - local Windows path: `Launch VS Code in Remote WSL mode = No`
+  - WSL UNC path (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project = Yes`
   - WSL distro default = your Windows default distro (`wsl --status`)
   - `Ignore Codex chat sessions in gitignore = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
+- For WSL-hosted targets (WSL UNC from Windows, or wizard executed inside WSL), wizard can generate a Windows shortcut named `Open <project>.lnk`.
+- Wizard asks for shortcut location when enabled: `Project root`, `Desktop`, `Start Menu`, or `Custom path`.
+- Shortcut execution now uses direct `wsl.exe` arguments (no encoded PowerShell command), reducing antivirus false-positive risk.
 - Wizard always writes:
   - `chatgpt.openOnStartup=true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux=<selected>`
@@ -120,18 +131,50 @@ Wizard defaults:
 - In Remote WSL mode, launcher skips isolated `--user-data-dir` because WSL `code` CLI does not support that option.
 - When `chatgpt.runCodexInWindowsSubsystemForLinux=true` and launch mode is local Windows, launcher configures an isolated `chatgpt.cliExecutable` wrapper in the project profile to force project `CODEX_HOME` for Codex app-server.
 
-### VS Code extension (preview)
+### VS Code extension
 
 The extension adds in-editor commands for wizard UX and launcher operations:
 
-- `Codex Session Isolator: Initialize Launcher`
+- Primary Command Palette commands:
+- `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- Utility commands (available for direct use but hidden from the default Command Palette list):
+- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
 Marketplace identifier:
 
 - `2ma.codex-session-isolator`
+
+Release channels:
+
+- Stable: published on every push/merge to `main`.
+- Pre-release: published on every push/merge to `pre-release`.
+
+Quick start (Marketplace install -> setup -> verify):
+
+1. Install `2ma.codex-session-isolator` from VS Code Marketplace.
+2. Open your project in VS Code.
+3. Setup launcher:
+   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, then confirm the final reopen prompt for the current project.
+4. Verify in terminal:
+   - Windows PowerShell: `echo $env:CODEX_HOME`
+   - bash/zsh: `echo "$CODEX_HOME"`
+5. Expected value: `<project-root>/.codex` (or Linux-equivalent path in WSL/Unix mode).
+
+Install pre-release build:
+
+1. Open extension page for `2ma.codex-session-isolator`.
+2. Open Manage menu (gear icon).
+3. Choose `Install Pre-Release Version` (or `Switch to Pre-Release Version`).
+
+CLI:
+
+```bash
+code --install-extension 2ma.codex-session-isolator --pre-release
+```
 
 Development run:
 
@@ -170,6 +213,7 @@ Recommended:
 1. Keep `Launch VS Code in Remote WSL mode` on `Yes` (default).
 2. Keep `Set Codex to run in WSL` on `Yes` (default).
 3. Reopen with generated `vsc_launcher.bat`.
+4. Optional: enable shortcut generation and choose Desktop/Start menu/custom location in wizard.
 
 Note:
 
@@ -183,6 +227,37 @@ chmod +x ./launchers/codex-session-isolator.sh
 ./launchers/codex-session-isolator.sh /path/to/my-app/MyApp.code-workspace
 ./launchers/codex-session-isolator.sh /path/to/my-app
 ```
+
+## Cleanup/Uninstall
+
+To remove generated launcher artifacts safely from a project:
+
+1. Delete launcher file from project root:
+   - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
+   - `Open <project>.lnk` (only when generated for WSL-hosted target)
+2. Delete `.vsc_launcher/` (config/logs/backups).
+3. Remove managed `.gitignore` block:
+   - from `# >>> codex-session-isolator >>>`
+   - to `# <<< codex-session-isolator <<<`
+4. Optional: remove extension-managed settings keys:
+   - `chatgpt.runCodexInWindowsSubsystemForLinux`
+   - `chatgpt.openOnStartup`
+   - `chatgpt.cliExecutable` (only if set to `.vsc_launcher/codex-wsl-wrapper.sh`)
+5. Optional: delete project `.codex/` only if you do not need that project's isolated session state/history.
+
+## Troubleshooting
+
+- Wizard fails immediately:
+  ensure PowerShell is installed (`pwsh` or `powershell.exe`), then retry.
+- Reopen fails with launcher missing:
+  run Initialize first (or one-click setup command if your version provides it).
+- WSL options are missing:
+  verify `wsl --status`; if unavailable, use local mode or install/configure WSL.
+- Permission/write errors:
+  check folder write access. Backup copies for managed overwrites are under `.vsc_launcher/backups/`.
+- Where to inspect logs:
+  1. VS Code Output channel: `Codex Session Isolator`
+  2. Project logs: `.vsc_launcher/logs`
 
 ## Documentation
 
@@ -214,10 +289,10 @@ Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
 
 - Branch model:
   - `pre-release`: integration branch. Every push/merge auto-publishes Marketplace pre-release.
-  - `main`: stable branch. Stable publish happens from GitHub Release (`release.published`).
+  - `main`: stable branch. Every push/merge auto-publishes Marketplace stable.
 - CI/Security workflows run only for `main` and `pre-release` (push + pull request).
-- Stable publish: create a GitHub Release tag that matches extension version (`v<version>`).
-- Manual publish: run the `Extension Publish` workflow via `workflow_dispatch` (`pre-release` or `stable`).
+- Manual publish fallback: run `Extension Publish` via `workflow_dispatch` (`pre-release` or `stable`).
+- Manual stable fallback requires `ref=main` and `release_tag=v<version>`.
 
 Required repository secret:
 

@@ -16,6 +16,7 @@ Current extension identifier:
   - `keywords`, `categories`
   - `license`
 - `extension/README.md` is user-facing and complete.
+- README images use absolute HTTPS URLs (Marketplace-safe rendering).
 - `extension/CHANGELOG.md` exists.
 - `extension/LICENSE` exists.
 
@@ -73,7 +74,7 @@ Workflow file:
 
 Supported triggers:
 
-- `release.published` -> stable publish
+- `push` to `main` -> auto stable publish
 - `workflow_dispatch` -> manual publish (`pre-release` or `stable`)
 - `push` to `pre-release` -> auto pre-release publish
 
@@ -88,7 +89,6 @@ Workflow outputs:
 
 - VSIX package artifact
 - SHA-256 checksum file (`*.vsix.sha256`)
-- On stable release event, VSIX and checksum are attached to the GitHub release
 
 Required repository secret:
 
@@ -97,9 +97,8 @@ Required repository secret:
 Recommended rollout:
 
 1. Merge feature work into `pre-release` and validate automatic pre-release publishing.
-2. Promote to `main` only for stable-ready commits.
-3. Create tag `v<version>` from `main` and publish GitHub Release.
-4. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
+2. Promote to `main` only for stable-ready commits (push/merge to `main` auto-publishes stable).
+3. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
 
 ## Integrity verification (consumer side)
 

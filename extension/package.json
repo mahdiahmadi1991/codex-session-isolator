@@ -2,7 +2,7 @@
   "name": "codex-session-isolator",
   "displayName": "Codex Session Isolator",
   "description": "Workspace launcher assistant for isolated Codex sessions in VS Code.",
-  "version": "0.3.4",
+  "version": "0.3.8",
   "publisher": "2ma",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -37,10 +37,12 @@
   ],
   "activationEvents": [
     "onCommand:codexSessionIsolator.initialize",
+    "onCommand:codexSessionIsolator.setup",
     "onCommand:codexSessionIsolator.reopenWithLauncher",
     "onCommand:codexSessionIsolator.openLogs",
     "onCommand:codexSessionIsolator.openConfig",
     "onCommand:codexProjectIsolator.initialize",
+    "onCommand:codexProjectIsolator.setup",
     "onCommand:codexProjectIsolator.reopenWithLauncher",
     "onCommand:codexProjectIsolator.openLogs",
     "onCommand:codexProjectIsolator.openConfig"
@@ -51,6 +53,10 @@
       {
         "command": "codexSessionIsolator.initialize",
         "title": "Codex Session Isolator: Initialize Launcher"
+      },
+      {
+        "command": "codexSessionIsolator.setup",
+        "title": "Codex Session Isolator: Setup Launcher"
       },
       {
         "command": "codexSessionIsolator.reopenWithLauncher",
@@ -67,6 +73,10 @@
       {
         "command": "codexProjectIsolator.initialize",
         "title": "Codex Session Isolator (Legacy): Initialize Launcher"
+      },
+      {
+        "command": "codexProjectIsolator.setup",
+        "title": "Codex Session Isolator (Legacy): Setup Launcher"
       },
       {
         "command": "codexProjectIsolator.reopenWithLauncher",
@@ -92,11 +102,27 @@
           "when": "false"
         },
         {
+          "command": "codexProjectIsolator.setup",
+          "when": "false"
+        },
+        {
           "command": "codexProjectIsolator.openLogs",
           "when": "false"
         },
         {
           "command": "codexProjectIsolator.openConfig",
+          "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.initialize",
+          "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.openLogs",
+          "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.openConfig",
           "when": "false"
         }
       ]
@@ -111,13 +137,8 @@
         },
         "codexSessionIsolator.closeWindowAfterReopen": {
           "type": "boolean",
-          "default": true,
-          "description": "Close current VS Code window after launching project launcher."
-        },
-        "codexSessionIsolator.requireConfirmation": {
-          "type": "boolean",
-          "default": true,
-          "description": "Require explicit confirmation before initializing a launcher."
+          "default": false,
+          "description": "Close current VS Code window after launching project launcher (if disabled, current window stays open)."
         }
       }
     }
@@ -126,6 +147,7 @@
     "sync:wizard": "node ./scripts/sync-wizard.mjs",
     "precompile": "npm run sync:wizard",
     "compile": "tsc -p ./",
+    "test:unit": "npm run compile && node --test ./test/**/*.test.js",
     "watch": "tsc -watch -p ./",
     "prepackage": "npm run sync:wizard",
     "package": "npx @vscode/vsce package",
