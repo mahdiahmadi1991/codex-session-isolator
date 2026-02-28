@@ -1,13 +1,29 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as os from "os";
 import * as fs from "fs/promises";
 import { existsSync, Dirent } from "fs";
-import { spawn } from "child_process";
+import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import {
+  createWizardPromptParserState,
+  consumeWizardOutputChunk,
+  WizardPromptAnswers,
+  WizardPromptId
+} from "./wizardPromptMatcher";
+import {
+  detectPowerShellCommand as detectPowerShellCommandWithProbe
+} from "./powerShellDetection";
+import {
+  getRemoteWslDefaultDecision
+} from "./wizardContext";
 
 type WizardDefaults = {
   useRemoteWsl?: boolean;
   codexRunInWsl?: boolean;
   ignoreSessions?: boolean;
+  windowsShortcutEnabled?: boolean;
+  windowsShortcutLocation?: "projectRoot" | "desktop" | "startMenu" | "custom";
+  windowsShortcutCustomPath?: string;
 };
 
 type ProcessResult = {
@@ -16,17 +32,149 @@ type ProcessResult = {
   stderr: string;
 };
 
+type WizardRunFailureKind = "timeout" | "unknownPrompt" | "processError";
+
+type WizardRunResult = {
+  exitCode: number;
+  failureKind?: WizardRunFailureKind;
+  message?: string;
+};
+
+type InitializeFlowOptions = {
+  autoReopenAfterInitialize: boolean;
+  promptToReopenAfterInitialize: boolean;
+};
+
+type LogLevel = "INFO" | "WARN" | "ERROR";
+
+type WizardPromptContext = {
+  effectivePlatform: NodeJS.Platform;
+  effectiveTargetPath: string;
+};
+
 const EXTENSION_NAMESPACE = "codexSessionIsolator";
 const LEGACY_NAMESPACE = "codexProjectIsolator";
 
 const CMD_INITIALIZE = `${EXTENSION_NAMESPACE}.initialize`;
+const CMD_SETUP = `${EXTENSION_NAMESPACE}.setup`;
 const CMD_REOPEN = `${EXTENSION_NAMESPACE}.reopenWithLauncher`;
 const CMD_OPEN_LOGS = `${EXTENSION_NAMESPACE}.openLogs`;
 const CMD_OPEN_CONFIG = `${EXTENSION_NAMESPACE}.openConfig`;
 const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
+const LEGACY_CMD_SETUP = `${LEGACY_NAMESPACE}.setup`;
 const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
 const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
 const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
+const WIZARD_TIMEOUT_MS = 120_000;
+const REOPEN_CLOSE_HANDOFF_DELAY_MS = 1500;
+
+function formatTimestamp(): string {
+  return new Date().toISOString();
+}
+
+function normalizeLogMessage(message: string): { scope: string; body: string } {
+  const scopes: string[] = [];
+  let remaining = message.trim();
+  let match = remaining.match(/^\[([^\]]+)\]\s*/);
+  while (match) {
+    scopes.push(match[1].trim());
+    remaining = remaining.slice(match[0].length);
+    match = remaining.match(/^\[([^\]]+)\]\s*/);
+  }
+
+  return {
+    scope: scopes.length > 0 ? scopes.join(".") : "extension",
+    body: remaining
+  };
+}
+
+function appendOutputLine(
+  output: vscode.OutputChannel,
+  message: string,
+  level: LogLevel = "INFO"
+): void {
+  const normalized = normalizeLogMessage(message);
+  output.appendLine(`${formatTimestamp()} [${level}] [${normalized.scope}] ${normalized.body}`);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function quoteForPosixSingleQuotes(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function quoteForPowerShellSingleQuotes(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function getWindowsShortcutFileName(targetRoot: string): string {
+  const leaf = path.basename(targetRoot) || "Project";
+  const safeLeaf = leaf
+    .replace(/[<>:"/\\|?*]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || "Project";
+  return `Open ${safeLeaf}.lnk`;
+}
+
+function joinWindowsPath(basePath: string, leaf: string): string {
+  const trimmedBase = basePath.replace(/[\\/]+$/, "");
+  return `${trimmedBase}\\${leaf}`;
+}
+
+function isWslEnvironmentRuntime(): boolean {
+  return Boolean(process.env.WSL_DISTRO_NAME && process.env.WSL_INTEROP);
+}
+
+function isWindowsPowerShellExecutable(command: string): boolean {
+  return /(?:^|[\\/])(pwsh|powershell)(?:\.exe)?$/i.test(command) && /\.exe$/i.test(command);
+}
+
+function inferWslDistroFromTargetPath(targetPath: string, platform: NodeJS.Platform): string | undefined {
+  if (!targetPath) {
+    return undefined;
+  }
+
+  const uncMatch = targetPath.match(/^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\/i);
+  if (uncMatch?.[1]) {
+    return uncMatch[1].trim();
+  }
+
+  if (platform !== "win32" && targetPath.startsWith("/") && process.env.WSL_DISTRO_NAME) {
+    return process.env.WSL_DISTRO_NAME.trim();
+  }
+
+  return undefined;
+}
+
+function getRuntimeLauncherPath(targetRoot: string): string {
+  return process.platform === "win32"
+    ? path.join(targetRoot, "vsc_launcher.bat")
+    : path.join(targetRoot, "vsc_launcher.sh");
+}
+
+function getAlternateLauncherPath(targetRoot: string): string {
+  return process.platform === "win32"
+    ? path.join(targetRoot, "vsc_launcher.sh")
+    : path.join(targetRoot, "vsc_launcher.bat");
+}
+
+function getAnyExistingLauncherPath(targetRoot: string): string | undefined {
+  const runtimeLauncherPath = getRuntimeLauncherPath(targetRoot);
+  if (existsSync(runtimeLauncherPath)) {
+    return runtimeLauncherPath;
+  }
+
+  const alternateLauncherPath = getAlternateLauncherPath(targetRoot);
+  if (existsSync(alternateLauncherPath)) {
+    return alternateLauncherPath;
+  }
+
+  return undefined;
+}
 
 function getBooleanSetting(key: string, fallback: boolean): boolean {
   const value = vscode.workspace.getConfiguration(EXTENSION_NAMESPACE).get<boolean>(key);
@@ -47,14 +195,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
 
   const initializeHandler = async () => {
-    await initializeLauncher(context, output);
+    await initializeLauncherCommand(context, output);
+  };
+  const setupHandler = async () => {
+    await setupLauncherCommand(context, output);
   };
   const reopenHandler = async () => {
     const root = await pickTargetRoot();
     if (!root) {
       return;
     }
-    await reopenWithLauncher(root);
+    await reopenWithLauncher(context, output, root, true);
   };
   const openLogsHandler = async () => {
     const root = await pickTargetRoot();
@@ -72,12 +223,14 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(vscode.commands.registerCommand(CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_SETUP, setupHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_REOPEN, reopenHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_LOGS, openLogsHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_CONFIG, openConfigHandler));
 
   // Keep legacy command IDs active so older keybindings/tasks still work after renaming.
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_INITIALIZE, initializeHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_SETUP, setupHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_REOPEN, reopenHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_LOGS, openLogsHandler));
   context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_CONFIG, openConfigHandler));
@@ -85,138 +238,397 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {}
 
-async function initializeLauncher(
+async function initializeLauncherCommand(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
 ): Promise<void> {
+  const targetSelection = await pickOperationTarget();
+  if (!targetSelection) {
+    return;
+  }
+
+  const initialized = await initializeLauncherForTarget(
+    context,
+    output,
+    targetSelection.targetRoot,
+    {
+      autoReopenAfterInitialize: false,
+      promptToReopenAfterInitialize: targetSelection.scope === "current"
+    }
+  );
+
+  if (initialized && targetSelection.scope === "other") {
+    await showExternalTargetCompletionReport(targetSelection.targetRoot);
+  }
+}
+
+async function setupLauncherCommand(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot?: string,
+  autoReopenAfterInitialize = false
+): Promise<void> {
+  const targetSelection = targetRoot
+    ? { targetRoot, scope: "current" as const }
+    : await pickOperationTarget();
+  if (!targetSelection) {
+    return;
+  }
+
+  const shouldReopen = targetSelection.scope === "current";
+  const initialized = await initializeLauncherForTarget(
+    context,
+    output,
+    targetSelection.targetRoot,
+    {
+      autoReopenAfterInitialize,
+      promptToReopenAfterInitialize: shouldReopen && !autoReopenAfterInitialize
+    }
+  );
+
+  if (initialized && targetSelection.scope === "other") {
+    await showExternalTargetCompletionReport(targetSelection.targetRoot);
+  }
+}
+
+async function initializeLauncherForTarget(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  options: InitializeFlowOptions
+): Promise<boolean> {
   if (!(await ensureWorkspaceTrusted())) {
-    return;
-  }
-
-  const targetRoot = await pickTargetRoot();
-  if (!targetRoot) {
-    return;
-  }
-
-  if (!(await confirmLauncherChanges(targetRoot))) {
-    return;
+    return false;
   }
 
   const scriptPath = context.asAbsolutePath(path.join("scripts", "vsc-launcher-wizard.ps1"));
   if (!existsSync(scriptPath)) {
     void vscode.window.showErrorMessage(`Bundled wizard script not found: ${scriptPath}`);
-    return;
+    return false;
   }
 
-  const responses = await buildWizardResponses(targetRoot);
-  if (!responses) {
-    return;
-  }
-
-  const psCommand = await detectPowerShellCommand();
-  if (!psCommand) {
+  const psDetection = await detectPowerShellCommandRuntime(output);
+  if (!psDetection.command) {
     void vscode.window.showErrorMessage(
-      "PowerShell was not found. Install powershell/pwsh to run the launcher wizard."
+      "No PowerShell runtime found. Install PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`), then retry. See 'Codex Session Isolator' output logs."
     );
-    return;
+    return false;
   }
+  const psCommand = psDetection.command;
 
   const debugMode = getBooleanSetting("debugWizardByDefault", false);
+  let scriptPathForCommand = scriptPath;
+  let targetRootForCommand = targetRoot;
+  if (isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand)) {
+    const convertedScriptPath = await convertWslPathToWindows(scriptPath);
+    const convertedTargetRoot = await convertWslPathToWindows(targetRoot);
+    if (!convertedScriptPath || !convertedTargetRoot) {
+      void vscode.window.showErrorMessage(
+        "Failed to convert WSL paths for Windows PowerShell execution. Ensure 'wslpath' is available, then retry."
+      );
+      return false;
+    }
 
-  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-TargetPath", targetRoot];
+    scriptPathForCommand = convertedScriptPath;
+    targetRootForCommand = convertedTargetRoot;
+    appendOutputLine(output, `[extension] Using Windows PowerShell path translation for WSL target: ${targetRootForCommand}`);
+  }
+
+  const responseContext: WizardPromptContext = {
+    effectivePlatform: isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand) ? "win32" : process.platform,
+    effectiveTargetPath: targetRootForCommand
+  };
+  const responses = await buildWizardResponses(targetRoot, responseContext);
+  if (!responses) {
+    return false;
+  }
+
+  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPathForCommand, "-TargetPath", targetRootForCommand];
   if (debugMode) {
     args.push("-DebugMode");
   }
 
   output.show(true);
-  output.appendLine(`[extension] Running wizard for: ${targetRoot}`);
+  appendOutputLine(output, `[extension] Running wizard for: ${targetRoot}`);
+  const shouldPreFeedAnswers = isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand);
+  if (shouldPreFeedAnswers) {
+    appendOutputLine(output, "[extension] Prefeeding wizard answers because Windows PowerShell in WSL does not reliably emit Read-Host prompts over pipes.");
+  }
 
-  const exitCode = await runWizardProcess(psCommand, args, responses, targetRoot, output);
-  if (exitCode !== 0) {
+  const runResult = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Codex Session Isolator: Initializing launcher",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Running launcher wizard..." });
+      return runWizardProcess(psCommand, args, responses, targetRoot, output, shouldPreFeedAnswers);
+    }
+  );
+  if (runResult.failureKind === "timeout") {
+    void vscode.window.showErrorMessage(
+      "Launcher wizard timed out after 120 seconds. Check 'Codex Session Isolator' output logs for details."
+    );
+    return false;
+  }
+
+  if (runResult.failureKind === "unknownPrompt") {
+    void vscode.window.showErrorMessage(
+      "Launcher wizard stopped on an unknown prompt to avoid hanging. Check 'Codex Session Isolator' output logs."
+    );
+    return false;
+  }
+
+  if (runResult.exitCode !== 0) {
     void vscode.window.showErrorMessage(
       "Launcher wizard failed. See 'Codex Session Isolator' output channel for details."
     );
-    return;
+    return false;
   }
 
-  const action = await vscode.window.showInformationMessage(
-    "Launcher generated successfully.",
-    "Reopen With Launcher",
-    "Open Logs",
-    "Open Config"
-  );
-
-  if (action === "Reopen With Launcher") {
-    await reopenWithLauncher(targetRoot);
-  } else if (action === "Open Logs") {
-    await openLogsFolder(targetRoot);
-  } else if (action === "Open Config") {
-    await openConfigFile(targetRoot);
+  if (options.autoReopenAfterInitialize) {
+    void vscode.window.showInformationMessage("Launcher setup complete. Reopening with launcher...");
+    const reopened = await reopenWithLauncher(context, output, targetRoot, false, true);
+    if (!reopened) {
+      return false;
+    }
+    return true;
   }
+
+  if (options.promptToReopenAfterInitialize) {
+    const action = await vscode.window.showInformationMessage(
+      "Launcher generated successfully. Reopen this project with the launcher now?",
+      { modal: true },
+      "Reopen With Launcher",
+      "Not now"
+    );
+
+    if (action === "Reopen With Launcher") {
+      const reopened = await reopenWithLauncher(context, output, targetRoot, false, true);
+      if (!reopened) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 async function runWizardProcess(
   command: string,
   args: string[],
-  responses: string[],
+  responses: WizardPromptAnswers,
   cwd: string,
-  output: vscode.OutputChannel
-): Promise<number> {
-  return new Promise<number>((resolve) => {
+  output: vscode.OutputChannel,
+  preFeedAnswers: boolean
+): Promise<WizardRunResult> {
+  return new Promise<WizardRunResult>((resolve) => {
     const child = spawn(command, args, { cwd, env: process.env });
+    const parserState = createWizardPromptParserState();
+    let settled = false;
+
+    const finalize = (result: WizardRunResult): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutHandle);
+      resolve(result);
+    };
+
+    const fail = (failureKind: WizardRunFailureKind, message: string): void => {
+      appendOutputLine(output, `[extension] ${message}`, "ERROR");
+      terminateProcess(child, output);
+      finalize({ exitCode: 1, failureKind, message });
+    };
+
+    const handleChunk = (stream: "stdout" | "stderr", chunk: Buffer): void => {
+      if (settled) {
+        return;
+      }
+
+      const text = chunk.toString();
+      output.append(text);
+
+      if (preFeedAnswers) {
+        return;
+      }
+
+      const actions = consumeWizardOutputChunk(parserState, text, responses);
+      for (const action of actions) {
+        if (action.kind === "unknown") {
+          fail(
+            "unknownPrompt",
+            `Unexpected wizard prompt: ${action.promptText} (${action.reason})`
+          );
+          return;
+        }
+
+        const answer = `${action.answer}\n`;
+        if (!child.stdin.writable) {
+          fail(
+            "processError",
+            `Wizard stdin is not writable when answering prompt '${action.promptId}'.`
+          );
+          return;
+        }
+
+        appendOutputLine(
+          output,
+          `[extension][wizard-answer] ${JSON.stringify({
+            stream,
+            promptId: action.promptId,
+            prompt: action.promptText,
+            answer: formatPromptAnswerForLog(action.promptId, action.answer)
+          })}`
+        );
+
+        child.stdin.write(answer);
+      }
+    };
 
     child.stdout.on("data", (chunk: Buffer) => {
-      output.append(chunk.toString());
+      handleChunk("stdout", chunk);
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
-      output.append(chunk.toString());
+      handleChunk("stderr", chunk);
     });
 
     child.on("error", (error: Error) => {
-      output.appendLine(`[extension] Failed to start wizard process: ${error.message}`);
-      resolve(1);
+      finalize({
+        exitCode: 1,
+        failureKind: "processError",
+        message: `Failed to start wizard process: ${error.message}`
+      });
     });
+
+    if (preFeedAnswers) {
+      const serializedAnswers = serializeWizardAnswersForPrefeed(responses);
+      if (serializedAnswers.length > 0) {
+        child.stdin.write(serializedAnswers);
+      }
+    }
 
     child.on("close", (code: number | null) => {
-      resolve(code ?? 1);
+      finalize({ exitCode: code ?? 1 });
     });
 
-    if (child.stdin.writable) {
-      const payload = responses.join("\n") + "\n";
-      child.stdin.write(payload);
-      child.stdin.end();
-    }
+    const timeoutHandle = setTimeout(() => {
+      fail(
+        "timeout",
+        `Wizard process timed out after ${Math.floor(WIZARD_TIMEOUT_MS / 1000)} seconds.`
+      );
+    }, WIZARD_TIMEOUT_MS);
   });
 }
 
-async function buildWizardResponses(targetRoot: string): Promise<string[] | undefined> {
-  const defaults = await readWizardDefaults(targetRoot);
-  const responses: string[] = [];
+function serializeWizardAnswersForPrefeed(responses: WizardPromptAnswers): string {
+  const orderedPromptIds: WizardPromptId[] = [
+    "workspaceSelection",
+    "remoteWsl",
+    "wslDistroSelection",
+    "codexRunInWsl",
+    "createWindowsShortcut",
+    "windowsShortcutLocationSelection",
+    "windowsShortcutCustomPath",
+    "ignoreSessions"
+  ];
+  const orderedAnswers: string[] = [];
+  for (const promptId of orderedPromptIds) {
+    const value = responses[promptId];
+    if (typeof value === "string" && value.length > 0) {
+      orderedAnswers.push(value);
+    }
+  }
 
-  const workspaceFiles = await findWorkspaceFiles(targetRoot, 3);
+  if (orderedAnswers.length === 0) {
+    return "";
+  }
+
+  return `${orderedAnswers.join("\n")}\n`;
+}
+
+function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.OutputChannel): void {
+  try {
+    if (child.stdin.writable) {
+      child.stdin.end();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOutputLine(output, `[extension] Failed to close wizard stdin: ${message}`, "WARN");
+  }
+
+  try {
+    if (!child.killed) {
+      child.kill();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendOutputLine(output, `[extension] Failed to terminate wizard process: ${message}`, "WARN");
+  }
+}
+
+function formatPromptAnswerForLog(promptId: WizardPromptId, answer: string): string {
+  if (promptId === "workspaceSelection" || promptId === "wslDistroSelection" || promptId === "windowsShortcutLocationSelection") {
+    return `option_${answer}`;
+  }
+
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === "y" || normalized === "yes") {
+    return "yes";
+  }
+  if (normalized === "n" || normalized === "no") {
+    return "no";
+  }
+
+  return "value";
+}
+
+async function buildWizardResponses(
+  targetRoot: string,
+  promptContext?: WizardPromptContext
+): Promise<WizardPromptAnswers | undefined> {
+  const defaults = await readWizardDefaults(targetRoot);
+  const responses: WizardPromptAnswers = {};
+  const effectivePlatform = promptContext?.effectivePlatform ?? process.platform;
+  const effectiveTargetPath = promptContext?.effectiveTargetPath ?? targetRoot;
+
+  const workspaceFiles = await findWorkspaceFiles(targetRoot);
   if (workspaceFiles.length > 1) {
     const selected = await promptWorkspaceSelection(targetRoot, workspaceFiles);
     if (selected === undefined) {
       return undefined;
     }
-    responses.push(String(selected + 1));
+    responses.workspaceSelection = String(selected + 1);
   }
 
-  const wslAvailable = process.platform === "win32" && (await isWslAvailable());
+  const wslAvailable = effectivePlatform === "win32" && (await isWslAvailable());
   if (wslAvailable) {
+    const remoteDefaultDecision = getRemoteWslDefaultDecision({
+      targetPath: effectiveTargetPath,
+      platform: effectivePlatform,
+      remoteName: vscode.env.remoteName,
+      storedDefault: defaults.useRemoteWsl
+    });
     const useRemoteWsl = await promptBoolean(
       "Launch VS Code in Remote WSL mode?",
-      defaults.useRemoteWsl ?? true
+      remoteDefaultDecision.defaultValue
     );
     if (useRemoteWsl === undefined) {
       return undefined;
     }
-    responses.push(useRemoteWsl ? "y" : "n");
+    responses.remoteWsl = useRemoteWsl ? "y" : "n";
 
     if (useRemoteWsl) {
       const distros = await getWslDistros();
-      if (distros.length > 1) {
+      const inferredDistro = inferWslDistroFromTargetPath(effectiveTargetPath, effectivePlatform);
+      const inferredDistroIndex = inferredDistro
+        ? distros.findIndex((name) => name.toLowerCase() === inferredDistro.toLowerCase())
+        : -1;
+
+      if (distros.length > 1 && inferredDistroIndex < 0) {
         const defaultDistro = await getDefaultWslDistro();
         let defaultIndex = distros.findIndex((name) =>
           !!defaultDistro && name.toLowerCase() === defaultDistro.toLowerCase()
@@ -229,18 +641,47 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
         if (distroIndex === undefined) {
           return undefined;
         }
-        responses.push(String(distroIndex + 1));
+        responses.wslDistroSelection = String(distroIndex + 1);
       }
     }
 
-    const codexRunInWsl = await promptBoolean(
-      "Set Codex to run in WSL for this project?",
-      defaults.codexRunInWsl ?? true
+    if (useRemoteWsl) {
+      const codexRunInWsl = await promptBoolean(
+        "Set Codex to run in WSL for this project?",
+        defaults.codexRunInWsl ?? true
+      );
+      if (codexRunInWsl === undefined) {
+        return undefined;
+      }
+      responses.codexRunInWsl = codexRunInWsl ? "y" : "n";
+    }
+  }
+
+  if (isWslShortcutTarget(effectiveTargetPath, effectivePlatform)) {
+    const createShortcut = await promptBoolean(
+      "Create Windows shortcut for double-click launch?",
+      defaults.windowsShortcutEnabled ?? false
     );
-    if (codexRunInWsl === undefined) {
+    if (createShortcut === undefined) {
       return undefined;
     }
-    responses.push(codexRunInWsl ? "y" : "n");
+    responses.createWindowsShortcut = createShortcut ? "y" : "n";
+
+    if (createShortcut) {
+      const selectedLocation = await promptWindowsShortcutLocation(defaults.windowsShortcutLocation ?? "projectRoot");
+      if (!selectedLocation) {
+        return undefined;
+      }
+      responses.windowsShortcutLocationSelection = String(selectedLocation.index + 1);
+
+      if (selectedLocation.key === "custom") {
+        const customPath = await promptWindowsShortcutCustomPath(defaults.windowsShortcutCustomPath ?? "");
+        if (customPath === undefined) {
+          return undefined;
+        }
+        responses.windowsShortcutCustomPath = customPath;
+      }
+    }
   }
 
   const ignoreSessions = await promptBoolean(
@@ -250,9 +691,22 @@ async function buildWizardResponses(targetRoot: string): Promise<string[] | unde
   if (ignoreSessions === undefined) {
     return undefined;
   }
-  responses.push(ignoreSessions ? "y" : "n");
+  responses.ignoreSessions = ignoreSessions ? "y" : "n";
 
   return responses;
+}
+
+function isWslShortcutTarget(targetPath: string, platform: NodeJS.Platform): boolean {
+  if (!targetPath) {
+    return false;
+  }
+
+  if (platform === "win32") {
+    return /^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(targetPath);
+  }
+
+  const inWsl = !!process.env.WSL_DISTRO_NAME && !!process.env.WSL_INTEROP;
+  return inWsl && targetPath.startsWith("/");
 }
 
 async function promptWorkspaceSelection(root: string, workspaceFiles: string[]): Promise<number | undefined> {
@@ -285,6 +739,59 @@ async function promptWslDistroSelection(
   });
 
   return selected?.index;
+}
+
+async function promptWindowsShortcutLocation(
+  defaultLocation: "projectRoot" | "desktop" | "startMenu" | "custom"
+): Promise<{ key: "projectRoot" | "desktop" | "startMenu" | "custom"; index: number } | undefined> {
+  const ordered: Array<{ key: "projectRoot" | "desktop" | "startMenu" | "custom"; label: string }> = [
+    { key: "projectRoot", label: "Project root" },
+    { key: "desktop", label: "Desktop" },
+    { key: "startMenu", label: "Start Menu" },
+    { key: "custom", label: "Custom path" }
+  ];
+
+  let defaultIndex = ordered.findIndex((item) => item.key === defaultLocation);
+  if (defaultIndex < 0) {
+    defaultIndex = 0;
+  }
+
+  const picks = ordered.map((item, index) => ({
+    label: item.label,
+    description: index === defaultIndex ? "Default" : undefined,
+    key: item.key,
+    index
+  }));
+
+  const selected = await vscode.window.showQuickPick(picks, {
+    placeHolder: "Select Windows shortcut location",
+    canPickMany: false
+  });
+
+  if (!selected) {
+    return undefined;
+  }
+
+  return { key: selected.key, index: selected.index };
+}
+
+async function promptWindowsShortcutCustomPath(defaultPath: string): Promise<string | undefined> {
+  const value = await vscode.window.showInputBox({
+    prompt: "Enter Windows shortcut directory path",
+    value: defaultPath.trim(),
+    ignoreFocusOut: true
+  });
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  return trimmed;
 }
 
 async function promptBoolean(prompt: string, defaultValue: boolean): Promise<boolean | undefined> {
@@ -321,19 +828,26 @@ async function readWizardDefaults(targetRoot: string): Promise<WizardDefaults> {
   }
 }
 
-async function detectPowerShellCommand(): Promise<string | undefined> {
-  if (process.platform === "win32") {
-    return "powershell.exe";
+async function detectPowerShellCommandRuntime(
+  output: vscode.OutputChannel
+): Promise<{ command?: string }> {
+  const detection = await detectPowerShellCommandWithProbe(process.platform, runCommand, process.env);
+  if (detection.command) {
+    appendOutputLine(output, `[extension] PowerShell detected: ${detection.command}`, "INFO");
+    return { command: detection.command };
   }
 
-  for (const candidate of ["pwsh", "powershell"]) {
-    const result = await runCommand(candidate, ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"]);
-    if (result.code === 0) {
-      return candidate;
-    }
+  appendOutputLine(output, "[extension] PowerShell detection failed. Attempt summary:", "WARN");
+  for (const attempt of detection.attempts) {
+    const reason = attempt.stderr.trim().replace(/\s+/g, " ").slice(0, 200);
+    appendOutputLine(
+      output,
+      `[extension] - ${attempt.command}: exit=${attempt.code}${reason ? `, stderr=${reason}` : ""}`,
+      "WARN"
+    );
   }
 
-  return undefined;
+  return {};
 }
 
 async function isWslAvailable(): Promise<boolean> {
@@ -388,6 +902,16 @@ async function runCommand(command: string, args: string[]): Promise<ProcessResul
   });
 }
 
+async function convertWslPathToWindows(inputPath: string): Promise<string | undefined> {
+  const result = await runCommand("wslpath", ["-w", inputPath]);
+  if (result.code !== 0) {
+    return undefined;
+  }
+
+  const converted = result.stdout.trim();
+  return converted.length > 0 ? converted : undefined;
+}
+
 async function pickTargetRoot(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders ?? [];
 
@@ -410,14 +934,154 @@ async function pickTargetRoot(): Promise<string | undefined> {
     }
   }
 
+  const defaultPickerUri = getProjectPickerDefaultUri();
   const chosen = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    title: "Select project root for Codex Session Isolator"
+    title: "Select project root for Codex Session Isolator",
+    defaultUri: defaultPickerUri
   });
 
   return chosen?.[0]?.fsPath;
+}
+
+async function pickCurrentWorkspaceRootOnly(): Promise<string | undefined> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 1) {
+    return folders[0].uri.fsPath;
+  }
+
+  if (folders.length > 1) {
+    const picks = folders.map((folder) => ({
+      label: folder.name,
+      description: folder.uri.fsPath,
+      path: folder.uri.fsPath
+    }));
+    const selected = await vscode.window.showQuickPick(picks, {
+      placeHolder: "Select current workspace root",
+      canPickMany: false
+    });
+    return selected?.path;
+  }
+
+  return undefined;
+}
+
+async function pickTargetRootFromDialog(): Promise<string | undefined> {
+  const defaultPickerUri = getProjectPickerDefaultUri();
+  const chosen = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    title: "Select target project root for Codex Session Isolator",
+    defaultUri: defaultPickerUri
+  });
+  return chosen?.[0]?.fsPath;
+}
+
+function getProjectPickerDefaultUri(): vscode.Uri {
+  const remoteName = (vscode.env.remoteName ?? "").toLowerCase();
+  const envHome = (process.env.HOME ?? "").trim();
+  const osHome = (os.homedir() ?? "").trim();
+  let username = "";
+  try {
+    username = (os.userInfo().username ?? "").trim();
+  } catch {
+    username = "";
+  }
+
+  // In Remote WSL, prefer canonical Linux home (/home/<user>) even when HOME/os.homedir is overridden.
+  if (remoteName === "wsl" || !!process.env.WSL_DISTRO_NAME) {
+    if (username) {
+      const canonicalWslHome = path.posix.join("/home", username);
+      if (existsSync(canonicalWslHome)) {
+        return vscode.Uri.file(canonicalWslHome);
+      }
+      return vscode.Uri.file(canonicalWslHome);
+    }
+
+    if (envHome && envHome.startsWith("/home/")) {
+      return vscode.Uri.file(envHome);
+    }
+    if (osHome && osHome.startsWith("/home/")) {
+      return vscode.Uri.file(osHome);
+    }
+    return vscode.Uri.file("/home");
+  }
+
+  if (envHome) {
+    return vscode.Uri.file(envHome);
+  }
+  if (osHome) {
+    return vscode.Uri.file(osHome);
+  }
+  return vscode.Uri.file(path.parse(process.cwd()).root || "/");
+}
+
+async function pickOperationTarget(): Promise<{ targetRoot: string; scope: "current" | "other" } | undefined> {
+  const currentRoot = await pickCurrentWorkspaceRootOnly();
+  if (!currentRoot) {
+    const fallback = await pickTargetRoot();
+    return fallback ? { targetRoot: fallback, scope: "other" } : undefined;
+  }
+
+  const selection = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Current project (recommended)",
+        description: currentRoot,
+        scope: "current" as const
+      },
+      {
+        label: "Another project",
+        description: "Select a different folder",
+        scope: "other" as const
+      }
+    ],
+    {
+      placeHolder: "Apply launcher setup to current project or another project?",
+      canPickMany: false
+    }
+  );
+
+  if (!selection) {
+    return undefined;
+  }
+
+  if (selection.scope === "current") {
+    return { targetRoot: currentRoot, scope: "current" };
+  }
+
+  const otherRoot = await pickTargetRootFromDialog();
+  if (!otherRoot) {
+    return undefined;
+  }
+
+  return { targetRoot: otherRoot, scope: "other" };
+}
+
+async function showExternalTargetCompletionReport(targetRoot: string): Promise<void> {
+  const launcherPath = getAnyExistingLauncherPath(targetRoot) ?? getRuntimeLauncherPath(targetRoot);
+  const logsPath = path.join(targetRoot, ".vsc_launcher", "logs");
+  const details =
+    `Target: ${targetRoot}\n` +
+    `Launcher: ${launcherPath}\n` +
+    `Logs: ${logsPath}\n\n` +
+    "Current VS Code window was not reopened because a different project was selected.";
+
+  const action = await vscode.window.showInformationMessage(
+    "Launcher setup completed for another project.",
+    { modal: true, detail: details },
+    "Open Logs",
+    "Open Config"
+  );
+
+  if (action === "Open Logs") {
+    await openLogsFolder(targetRoot);
+  } else if (action === "Open Config") {
+    await openConfigFile(targetRoot);
+  }
 }
 
 async function openLogsFolder(targetRoot: string): Promise<void> {
@@ -427,12 +1091,48 @@ async function openLogsFolder(targetRoot: string): Promise<void> {
     return;
   }
 
-  await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(logsPath));
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(logsPath, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+
+  const logCandidates = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".log"))
+    .map((entry) => path.join(logsPath, entry.name));
+
+  if (logCandidates.length === 0) {
+    void vscode.window.showInformationMessage(`Launcher logs folder is empty: ${logsPath}`);
+    return;
+  }
+
+  let latestLogPath = logCandidates[0];
+  for (const candidate of logCandidates.slice(1)) {
+    try {
+      const [currentStat, candidateStat] = await Promise.all([
+        fs.stat(latestLogPath),
+        fs.stat(candidate)
+      ]);
+      if (candidateStat.mtimeMs > currentStat.mtimeMs) {
+        latestLogPath = candidate;
+      }
+    } catch {
+      // Keep current best candidate.
+    }
+  }
+
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(latestLogPath));
+  await vscode.window.showTextDocument(doc, { preview: false });
 }
 
 async function openConfigFile(targetRoot: string): Promise<void> {
-  const configPath = path.join(targetRoot, ".vsc_launcher", "config.json");
-  if (!existsSync(configPath)) {
+  const configCandidates = [
+    path.join(targetRoot, ".vsc_launcher", "config.json"),
+    path.join(targetRoot, ".vsc_launcher", "config.env")
+  ];
+  const configPath = configCandidates.find((candidate) => existsSync(candidate));
+  if (!configPath) {
     void vscode.window.showWarningMessage("Launcher config not found. Initialize launcher first.");
     return;
   }
@@ -441,47 +1141,336 @@ async function openConfigFile(targetRoot: string): Promise<void> {
   await vscode.window.showTextDocument(doc, { preview: false });
 }
 
-async function reopenWithLauncher(targetRoot: string): Promise<void> {
+async function reopenWithLauncher(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  allowSetupWhenMissing: boolean,
+  forceCloseCurrentWindow = false
+): Promise<boolean> {
   if (!(await ensureWorkspaceTrusted())) {
-    return;
+    return false;
   }
 
-  const launcherPath = process.platform === "win32"
-    ? path.join(targetRoot, "vsc_launcher.bat")
-    : path.join(targetRoot, "vsc_launcher.sh");
+  const launcherPath = getRuntimeLauncherPath(targetRoot);
+  const alternateLauncherPath = getAlternateLauncherPath(targetRoot);
+  const missingLauncherMessage = existsSync(alternateLauncherPath)
+    ? `Launcher file for this environment was not found in target root. Found ${path.basename(alternateLauncherPath)} instead. Reinitialize launcher to regenerate the correct launcher file.`
+    : "Launcher file not found in target root.";
 
   if (!existsSync(launcherPath)) {
-    const action = await vscode.window.showWarningMessage(
-      "Launcher file not found in target root.",
-      "Initialize Launcher"
-    );
-    if (action === "Initialize Launcher") {
-      await vscode.commands.executeCommand(CMD_INITIALIZE);
+    if (!allowSetupWhenMissing) {
+      void vscode.window.showWarningMessage(missingLauncherMessage);
+      return false;
     }
-    return;
+
+    const action = await vscode.window.showWarningMessage(
+      missingLauncherMessage,
+      "Initialize only",
+      "Initialize & Reopen",
+      "Cancel"
+    );
+
+    if (action === "Initialize only") {
+      await initializeLauncherForTarget(
+        context,
+        output,
+        targetRoot,
+        { autoReopenAfterInitialize: false, promptToReopenAfterInitialize: true }
+      );
+      return false;
+    }
+
+    if (action === "Initialize & Reopen") {
+      await setupLauncherCommand(context, output, targetRoot, true);
+      return false;
+    }
+
+    return false;
   }
 
-  if (process.platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", launcherPath], {
-      cwd: targetRoot,
-      detached: true,
-      stdio: "ignore"
-    });
-    child.unref();
-  } else {
-    await runCommand("chmod", ["+x", launcherPath]);
-    const child = spawn("bash", [launcherPath], {
-      cwd: targetRoot,
-      detached: true,
-      stdio: "ignore"
-    });
-    child.unref();
+  const appendReopenLog = (message: string) => {
+    if (output) {
+      appendOutputLine(output, `[extension][reopen] ${message}`);
+    }
+  };
+
+  const launched = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Codex Session Isolator: Reopen With Launcher",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Starting launcher..." });
+      if (process.platform === "win32") {
+        const launch = await trySpawnDetachedWindowsLauncher(launcherPath, targetRoot);
+        if (!launch.ok) {
+          appendReopenLog(`Windows launcher start failed (${launch.reason})`);
+          return false;
+        }
+
+        appendReopenLog("Launcher started using cmd.exe.");
+        return true;
+      }
+
+      const shortcutLaunch = await tryLaunchWindowsShortcutForTarget(targetRoot);
+      if (shortcutLaunch.ok) {
+        appendReopenLog(`Windows shortcut launched successfully (${shortcutLaunch.reason}).`);
+        return true;
+      }
+
+      appendReopenLog(`Windows shortcut launch skipped or failed (${shortcutLaunch.reason})`);
+
+      const isExecutableBefore = await isFileExecutable(launcherPath);
+      if (!isExecutableBefore) {
+        const chmodResult = await runCommand("chmod", ["+x", launcherPath]);
+        if (chmodResult.code !== 0) {
+          appendReopenLog(
+            `Warning: chmod +x failed for launcher (exit=${chmodResult.code}). Trying to run via shell fallback anyway.`
+          );
+        } else {
+          appendReopenLog("Launcher executable bit set with chmod +x.");
+        }
+      } else {
+        appendReopenLog("Launcher is already executable; skipping chmod.");
+      }
+
+      const wrappedLaunch = await trySpawnDetachedUnixLauncher(launcherPath, targetRoot);
+      if (wrappedLaunch.ok) {
+        appendReopenLog(`Launcher dispatched through detached shell wrapper (${wrappedLaunch.reason}).`);
+        return true;
+      }
+
+      appendReopenLog(`Detached shell wrapper failed (${wrappedLaunch.reason})`);
+
+      const directLaunch = await trySpawnDetached(launcherPath, [], targetRoot);
+      if (directLaunch.ok) {
+        appendReopenLog("Launcher started directly as an executable file.");
+        return true;
+      }
+
+      appendReopenLog(`Direct launcher execution failed (${directLaunch.reason})`);
+
+      const shellCandidates = ["bash", "zsh"];
+      for (const shellName of shellCandidates) {
+        const launch = await trySpawnDetached(shellName, [launcherPath], targetRoot);
+        if (launch.ok) {
+          appendReopenLog(`Launcher started using shell: ${shellName}`);
+          return true;
+        }
+
+        appendReopenLog(`Shell launch failed: ${shellName} (${launch.reason})`);
+      }
+
+      return false;
+    }
+  );
+
+  if (!launched) {
+    const message = process.platform === "win32"
+      ? "Failed to start launcher via cmd.exe. Check 'Codex Session Isolator' output logs."
+      : "Failed to reopen with launcher. Direct execution and bash/zsh fallbacks did not start successfully. Check 'Codex Session Isolator' output logs.";
+    void vscode.window.showErrorMessage(message);
+    return false;
   }
 
-  const shouldClose = getBooleanSetting("closeWindowAfterReopen", true);
+  const shouldClose = forceCloseCurrentWindow || getBooleanSetting("closeWindowAfterReopen", false);
   if (shouldClose) {
+    appendReopenLog(`Waiting ${REOPEN_CLOSE_HANDOFF_DELAY_MS}ms before closing current window to allow launcher handoff.`);
+    await delay(REOPEN_CLOSE_HANDOFF_DELAY_MS);
     await vscode.commands.executeCommand("workbench.action.closeWindow");
+  } else {
+    void vscode.window.showInformationMessage(
+      "Launcher started successfully. You can close this window after the new launcher window opens."
+    );
   }
+
+  return true;
+}
+
+async function isFileExecutable(filePath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    return (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+async function trySpawnDetached(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<{ ok: boolean; reason: string }> {
+  return new Promise<{ ok: boolean; reason: string }>((resolve) => {
+    const child = spawn(command, args, {
+      cwd,
+      detached: true,
+      stdio: "ignore"
+    });
+
+    child.once("error", (error: Error) => {
+      const message = error.message || "unknown spawn error";
+      resolve({ ok: false, reason: message });
+    });
+
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ ok: true, reason: "" });
+    });
+  });
+}
+
+async function trySpawnDetachedWindowsLauncher(
+  launcherPath: string,
+  cwd: string
+): Promise<{ ok: boolean; reason: string }> {
+  return new Promise<{ ok: boolean; reason: string }>((resolve) => {
+    const command = `"${launcherPath.replace(/"/g, "\"\"")}"`;
+    const child = spawn("cmd.exe", ["/d", "/s", "/c", command], {
+      cwd,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
+    });
+
+    child.once("error", (error: Error) => {
+      const message = error.message || "unknown spawn error";
+      resolve({ ok: false, reason: message });
+    });
+
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ ok: true, reason: "" });
+    });
+  });
+}
+
+async function trySpawnDetachedUnixLauncher(
+  launcherPath: string,
+  cwd: string
+): Promise<{ ok: boolean; reason: string }> {
+  const quotedLauncherPath = quoteForPosixSingleQuotes(launcherPath);
+  const dispatchCommand =
+    `if command -v setsid >/dev/null 2>&1; then ` +
+    `setsid -f ${quotedLauncherPath} >/dev/null 2>&1; ` +
+    `elif command -v nohup >/dev/null 2>&1; then ` +
+    `nohup ${quotedLauncherPath} >/dev/null 2>&1 & ` +
+    `else ${quotedLauncherPath} >/dev/null 2>&1 & fi`;
+
+  const shellCandidates = ["bash", "zsh"];
+  for (const shellName of shellCandidates) {
+    const launch = await trySpawnDetached(shellName, ["-lc", dispatchCommand], cwd);
+    if (launch.ok) {
+      return { ok: true, reason: shellName };
+    }
+  }
+
+  return { ok: false, reason: "no detached shell wrapper started successfully" };
+}
+
+async function getWindowsSpecialFolderPath(folderName: "Desktop" | "StartMenu"): Promise<string | undefined> {
+  const result = await runCommand(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      `[Environment]::GetFolderPath(${quoteForPowerShellSingleQuotes(folderName)})`
+    ]
+  );
+  if (result.code !== 0) {
+    return undefined;
+  }
+
+  const resolved = result.stdout.trim();
+  return resolved.length > 0 ? resolved : undefined;
+}
+
+async function testWindowsPathExists(windowsPath: string): Promise<boolean> {
+  const result = await runCommand(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      `if (Test-Path -LiteralPath ${quoteForPowerShellSingleQuotes(windowsPath)}) { exit 0 } else { exit 1 }`
+    ]
+  );
+  return result.code === 0;
+}
+
+async function tryLaunchWindowsShortcutForTarget(
+  targetRoot: string
+): Promise<{ ok: boolean; reason: string }> {
+  if (!(isWslEnvironmentRuntime())) {
+    return { ok: false, reason: "not running in WSL" };
+  }
+
+  const defaults = await readWizardDefaults(targetRoot);
+  if (!defaults.windowsShortcutEnabled) {
+    return { ok: false, reason: "windows shortcut is disabled for this target" };
+  }
+
+  const shortcutFileName = getWindowsShortcutFileName(targetRoot);
+  let shortcutWindowsPath: string | undefined;
+
+  switch (defaults.windowsShortcutLocation) {
+    case "projectRoot": {
+      const shortcutWslPath = path.join(targetRoot, shortcutFileName);
+      if (!existsSync(shortcutWslPath)) {
+        return { ok: false, reason: "project-root shortcut file was not found" };
+      }
+      shortcutWindowsPath = await convertWslPathToWindows(shortcutWslPath);
+      if (!shortcutWindowsPath) {
+        return { ok: false, reason: "failed to convert project-root shortcut path to Windows format" };
+      }
+      break;
+    }
+    case "desktop": {
+      const desktopPath = await getWindowsSpecialFolderPath("Desktop");
+      if (!desktopPath) {
+        return { ok: false, reason: "failed to resolve Windows Desktop path" };
+      }
+      shortcutWindowsPath = joinWindowsPath(desktopPath, shortcutFileName);
+      break;
+    }
+    case "startMenu": {
+      const startMenuPath = await getWindowsSpecialFolderPath("StartMenu");
+      if (!startMenuPath) {
+        return { ok: false, reason: "failed to resolve Windows Start Menu path" };
+      }
+      shortcutWindowsPath = joinWindowsPath(startMenuPath, shortcutFileName);
+      break;
+    }
+    case "custom": {
+      if (!defaults.windowsShortcutCustomPath) {
+        return { ok: false, reason: "custom shortcut path is not configured" };
+      }
+      shortcutWindowsPath = joinWindowsPath(defaults.windowsShortcutCustomPath, shortcutFileName);
+      break;
+    }
+    default:
+      return { ok: false, reason: "shortcut location is not configured" };
+  }
+
+  if (!(await testWindowsPathExists(shortcutWindowsPath))) {
+    return { ok: false, reason: `shortcut file was not found at ${shortcutWindowsPath}` };
+  }
+
+  const launch = await runCommand(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      `Start-Process -FilePath ${quoteForPowerShellSingleQuotes(shortcutWindowsPath)}`
+    ]
+  );
+  if (launch.code !== 0) {
+    const stderr = launch.stderr.trim().replace(/\s+/g, " ");
+    return { ok: false, reason: stderr || "Start-Process failed" };
+  }
+
+  return { ok: true, reason: shortcutWindowsPath };
 }
 
 async function ensureWorkspaceTrusted(): Promise<boolean> {
@@ -501,53 +1490,16 @@ async function ensureWorkspaceTrusted(): Promise<boolean> {
   return false;
 }
 
-async function confirmLauncherChanges(targetRoot: string): Promise<boolean> {
-  const requireConfirmation = getBooleanSetting("requireConfirmation", true);
-  if (!requireConfirmation) {
-    return true;
+async function findWorkspaceFiles(root: string): Promise<string[]> {
+  let entries: Dirent[] = [];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
   }
 
-  const action = await vscode.window.showWarningMessage(
-    "Initialize launcher for this project?",
-    {
-      modal: true,
-      detail:
-        `Target: ${targetRoot}\n\n` +
-        "This runs a bundled PowerShell wizard and may update project files:\n" +
-        "- .vscode/settings.json\n" +
-        "- workspace settings in *.code-workspace\n" +
-        "- .gitignore managed block\n" +
-        "- vsc_launcher.* and .vsc_launcher/*"
-    },
-    "Initialize"
-  );
-
-  return action === "Initialize";
-}
-
-async function findWorkspaceFiles(root: string, maxDepth: number): Promise<string[]> {
-  const results: string[] = [];
-
-  async function walk(dir: string, depth: number): Promise<void> {
-    let entries: Dirent[] = [];
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isFile() && entry.name.toLowerCase().endsWith(".code-workspace")) {
-        results.push(fullPath);
-      }
-
-      if (entry.isDirectory() && depth < maxDepth) {
-        await walk(fullPath, depth + 1);
-      }
-    }
-  }
-
-  await walk(root, 0);
-  return results.sort();
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".code-workspace"))
+    .map((entry) => path.join(root, entry.name))
+    .sort();
 }

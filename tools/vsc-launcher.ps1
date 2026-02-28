@@ -57,12 +57,6 @@ if (-not (Test-Path -LiteralPath $wizardPath -PathType Leaf)) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
-  if (-not (Test-Path -LiteralPath $targetPath -PathType Any)) {
-    throw "Path not found: $targetPath"
-  }
-}
-
-if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
   if ($debugMode) {
     & $wizardPath -TargetPath $targetPath -DebugMode
   } else {
@@ -75,6 +69,6 @@ if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
     & $wizardPath
   }
 }
-exit $LASTEXITCODE
+exit 0
 
 

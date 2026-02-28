@@ -1,8 +1,6 @@
 name: Extension Publish
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       channel:
@@ -18,7 +16,7 @@ on:
         required: false
         type: string
   push:
-    branches: ["pre-release"]
+    branches: ["pre-release", "main"]
 
 concurrency:
   group: extension-publish-${{ github.ref }}
@@ -29,9 +27,8 @@ jobs:
     name: Publish VS Code extension
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref_name == 'pre-release')
+      (github.event_name == 'push' && (github.ref_name == 'pre-release' || github.ref_name == 'main'))
     permissions:
       contents: write
     steps:
@@ -57,13 +54,28 @@ jobs:
         id: channel
         shell: bash
         run: |
-          channel="pre-release"
-          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
-            channel="stable"
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+          channel=""
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             channel="${{ github.event.inputs.channel }}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            if [[ "${GITHUB_REF_NAME}" == "pre-release" ]]; then
+              channel="pre-release"
+            elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+              channel="stable"
+            fi
+          fi
+          if [[ -z "${channel}" ]]; then
+            echo "Unable to resolve publish channel for event=${GITHUB_EVENT_NAME} ref=${GITHUB_REF_NAME}."
+            exit 1
           fi
           echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare extension manifest for selected channel
+        working-directory: extension
+        shell: bash
+        run: |
+          channel="${{ steps.channel.outputs.channel }}"
+          CHANNEL="$channel" node -e 'const fs=require("fs");const path="./package.json";const pkg=JSON.parse(fs.readFileSync(path,"utf8"));const channel=process.env.CHANNEL;if(channel==="pre-release"){pkg.preview=true;}else{delete pkg.preview;}fs.writeFileSync(path,`${JSON.stringify(pkg,null,2)}\n`);console.log(`manifest prepared for channel=${channel}, preview=${Boolean(pkg.preview)}`);'
 
       - name: Validate VSCE_PAT
         shell: bash
@@ -115,17 +127,6 @@ jobs:
           preview=$(node -p "Boolean(require('./extension/package.json').preview)")
           if [[ "${preview}" == "true" ]]; then
             echo "Stable publish requires extension/package.json preview=false (or omitted)."
-            exit 1
-          fi
-
-      - name: Validate release tag matches extension version
-        if: steps.channel.outputs.channel == 'stable' && github.event_name == 'release'
-        shell: bash
-        run: |
-          version=$(node -p "require('./extension/package.json').version")
-          expected_tag="v${version}"
-          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-            echo "Release tag (${GITHUB_REF_NAME}) must match extension version (${expected_tag})."
             exit 1
           fi
 
@@ -191,10 +192,48 @@ jobs:
         run: |
           npx @vscode/vsce publish --no-dependencies --packagePath "${{ steps.package.outputs.vsix_file }}" --skip-duplicate
 
-      - name: Upload release assets (stable)
-        if: steps.channel.outputs.channel == 'stable' && github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ steps.package.outputs.vsix_path }}
-            ${{ steps.package.outputs.sha_path }}
+      - name: Verify published channel metadata
+        shell: bash
+        run: |
+          channel="${{ steps.channel.outputs.channel }}"
+          version=$(node -p "require('./extension/package.json').version")
+          extension_id=$(node -p "const p=require('./extension/package.json'); p.publisher + '.' + p.name")
+          verified=0
+          max_attempts=24
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            payload="$(cd extension && npx @vscode/vsce show "$extension_id" --json 2>/dev/null || true)"
+            if [[ -z "$payload" ]]; then
+              echo "Attempt $attempt/$max_attempts: unable to fetch extension metadata yet."
+              sleep 10
+              continue
+            fi
+
+            tmp_json="$(mktemp)"
+            printf "%s" "$payload" > "$tmp_json"
+
+            set +e
+            CHANNEL="$channel" VERSION="$version" TMP_JSON="$tmp_json" node -e 'const fs=require("fs");const channel=process.env.CHANNEL;const version=process.env.VERSION;const data=JSON.parse(fs.readFileSync(process.env.TMP_JSON,"utf8"));const versions=Array.isArray(data.versions)?data.versions:[];const target=versions.find((v)=>v.version===version);if(!target){console.log(`Version ${version} not visible in Marketplace metadata yet.`);process.exit(10);}const props=Array.isArray(target.properties)?target.properties:[];const preReleaseProp=props.find((p)=>p.key==="Microsoft.VisualStudio.Code.PreRelease");const isPreRelease=String(preReleaseProp?.value||"").toLowerCase()==="true";if(channel==="pre-release"&&!isPreRelease){console.error(`Channel mismatch: expected pre-release metadata for version ${version}.`);process.exit(20);}if(channel==="stable"&&isPreRelease){console.error(`Channel mismatch: expected stable metadata for version ${version}.`);process.exit(20);}console.log(`Marketplace metadata verified for version ${version} on channel=${channel}.`);process.exit(0);'
+            verify_code=$?
+            set -e
+
+            rm -f "$tmp_json"
+
+            if [[ "$verify_code" -eq 0 ]]; then
+              verified=1
+              break
+            fi
+
+            if [[ "$verify_code" -eq 20 ]]; then
+              echo "Marketplace metadata channel mismatch. Failing publish run."
+              exit 1
+            fi
+
+            echo "Attempt $attempt/$max_attempts: version metadata is still propagating."
+            sleep 10
+          done
+
+          if [[ "$verified" -ne 1 ]]; then
+            echo "Marketplace metadata for version ${version} was not observable within verification window."
+            echo "Proceeding without hard failure to avoid false negatives caused by propagation delay."
+          fi

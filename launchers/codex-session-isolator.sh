@@ -20,8 +20,19 @@ if [[ ! -e "$target_path" ]]; then
 fi
 
 if [[ -d "$target_path" ]]; then
-  launch_target="$(cd "$target_path" && pwd)"
-  base_dir="$launch_target"
+  base_dir="$(cd "$target_path" && pwd)"
+  launch_target="$base_dir"
+  preferred_workspace="$base_dir/codex-session-isolator.code-workspace"
+  if [[ -f "$preferred_workspace" ]]; then
+    launch_target="$preferred_workspace"
+  else
+    shopt -s nullglob
+    workspace_files=("$base_dir"/*.code-workspace)
+    shopt -u nullglob
+    if [[ "${#workspace_files[@]}" -eq 1 ]]; then
+      launch_target="${workspace_files[0]}"
+    fi
+  fi
 else
   base_dir="$(cd "$(dirname "$target_path")" && pwd)"
   launch_target="$base_dir/$(basename "$target_path")"
@@ -32,6 +43,18 @@ codex_home="$base_dir/.codex"
 mkdir -p "$codex_home"
 
 export CODEX_HOME="$codex_home"
+
+start_code_detached() {
+  local target="$1"
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -f code --new-window "$target" >/dev/null 2>&1
+  elif command -v nohup >/dev/null 2>&1; then
+    nohup code --new-window "$target" >/dev/null 2>&1 &
+  else
+    code --new-window "$target" >/dev/null 2>&1 &
+  fi
+}
 
 if [[ "$dry_run" == "--dry-run" ]]; then
   echo "[dry-run] Local launch target: $launch_target"
@@ -44,4 +67,5 @@ if ! command -v code >/dev/null 2>&1; then
   exit 127
 fi
 
-code --new-window "$launch_target"
+start_code_detached "$launch_target"
+sleep 1

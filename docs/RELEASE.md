@@ -38,22 +38,28 @@ Security checks:
   - `pre-release` receives feature PR merges and auto-publishes pre-release extension builds.
   - `main` receives only stable-ready merges.
 
-## 3) Commit and tag
+## 3) Commit release-ready changes
 
 ```powershell
 git add .
 git commit -m "chore: prepare release vX.Y.Z"
-git tag vX.Y.Z
 ```
 
 ## 4) Push stable branch
 
 ```powershell
 git push origin main
-git push origin vX.Y.Z
 ```
 
-## 5) GitHub release
+## 5) Optional: tag and GitHub release
+
+- Create tag only when you need a formal source tag/audit point for stable.
+- For manual stable fallback workflow, tag must match `v<extension.version>`.
+
+```powershell
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
 
 - Create a GitHub Release from tag `vX.Y.Z`.
 - Use `CHANGELOG.md` release notes.
@@ -61,6 +67,7 @@ git push origin vX.Y.Z
 ## 6) Marketplace publish paths
 
 - Pre-release: automatic on every push/merge to `pre-release`.
-- Stable: publishing is automatic on `release.published` via `.github/workflows/extension-publish.yml`.
+- Stable: publishing is automatic on every push/merge to `main`.
 - Manual: run workflow `Extension Publish` (`workflow_dispatch`) and choose `stable` or `pre-release`.
-- Workflow also produces VSIX checksum (`*.vsix.sha256`); publish these files with stable release assets.
+- For manual stable publish, run on `main` and provide `release_tag=v<extension.version>`.
+- Workflow produces VSIX checksum (`*.vsix.sha256`) as an artifact for every publish run.
