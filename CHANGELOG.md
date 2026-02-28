@@ -25,6 +25,10 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Extension release policy now enforces split version lanes to avoid Marketplace channel collisions: stable uses even patch versions, pre-release uses odd patch versions, and the same numeric version is never reused across both channels.
+- Main promotion policy now accepts `release/*` branches so stable promotions can bump to a unique even patch version before merging to `main`.
+- Release and Marketplace documentation now defines the standard release-branch flow, required version-lane bumping, and mandatory post-release pre-release bump.
+- Repository `.gitignore` now ignores generated local extension packaging artifacts (`extension/*.vsix`, `extension/*.vsix.sha256`) so local release checks do not dirty the worktree.
 - Wizard now updates `.gitignore` only when the file already exists in target root; it no longer creates `.gitignore` automatically for non-git projects.
 - Wizard managed ignore entry now uses `vsc_launcher.*` so Windows (`.bat`) and Unix (`.sh`) launchers are both covered consistently.
 - Extension reopen flow now validates Windows launcher spawn with explicit `cmd.exe` start diagnostics, and `codexSessionIsolator.closeWindowAfterReopen` default is now `false` (keep current window open unless explicitly enabled).

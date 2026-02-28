@@ -151,6 +151,9 @@ Release channels:
 
 - Stable: published on every push/merge to `main`.
 - Pre-release: published on every push/merge to `pre-release`.
+- Stable uses even patch versions (`x.y.0`, `x.y.2`, ...).
+- Pre-release uses odd patch versions (`x.y.1`, `x.y.3`, ...).
+- The same numeric version is never reused across both channels.
 
 Quick start (Marketplace install -> setup -> verify):
 

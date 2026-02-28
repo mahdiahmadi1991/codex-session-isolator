@@ -57,6 +57,9 @@ Expected value:
 
 - Stable channel: published from `main`.
 - Pre-release channel: published from `pre-release`.
+- Stable uses even patch versions (`x.y.0`, `x.y.2`, ...).
+- Pre-release uses odd patch versions (`x.y.1`, `x.y.3`, ...).
+- The same numeric version is never reused across both channels.
 
 Install pre-release build from VS Code:
 
