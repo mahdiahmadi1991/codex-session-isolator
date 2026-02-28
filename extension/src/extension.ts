@@ -45,6 +45,11 @@ type InitializeFlowOptions = {
   showPostInitializeActions: boolean;
 };
 
+type WizardPromptContext = {
+  effectivePlatform: NodeJS.Platform;
+  effectiveTargetPath: string;
+};
+
 const EXTENSION_NAMESPACE = "codexSessionIsolator";
 const LEGACY_NAMESPACE = "codexProjectIsolator";
 
@@ -59,6 +64,14 @@ const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
 const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
 const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
 const WIZARD_TIMEOUT_MS = 120_000;
+
+function formatTimestamp(): string {
+  return new Date().toISOString();
+}
+
+function appendOutputLine(output: vscode.OutputChannel, message: string): void {
+  output.appendLine(`${formatTimestamp()} ${message}`);
+}
 
 function isWslEnvironmentRuntime(): boolean {
   return Boolean(process.env.WSL_DISTRO_NAME && process.env.WSL_INTEROP);
@@ -199,11 +212,6 @@ async function initializeLauncherForTarget(
     return false;
   }
 
-  const responses = await buildWizardResponses(targetRoot);
-  if (!responses) {
-    return false;
-  }
-
   const psDetection = await detectPowerShellCommandRuntime(output);
   if (!psDetection.command) {
     void vscode.window.showErrorMessage(
@@ -228,7 +236,16 @@ async function initializeLauncherForTarget(
 
     scriptPathForCommand = convertedScriptPath;
     targetRootForCommand = convertedTargetRoot;
-    output.appendLine(`[extension] Using Windows PowerShell path translation for WSL target: ${targetRootForCommand}`);
+    appendOutputLine(output, `[extension] Using Windows PowerShell path translation for WSL target: ${targetRootForCommand}`);
+  }
+
+  const responseContext: WizardPromptContext = {
+    effectivePlatform: isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand) ? "win32" : process.platform,
+    effectiveTargetPath: targetRootForCommand
+  };
+  const responses = await buildWizardResponses(targetRoot, responseContext);
+  if (!responses) {
+    return false;
   }
 
   const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPathForCommand, "-TargetPath", targetRootForCommand];
@@ -237,10 +254,10 @@ async function initializeLauncherForTarget(
   }
 
   output.show(true);
-  output.appendLine(`[extension] Running wizard for: ${targetRoot}`);
+  appendOutputLine(output, `[extension] Running wizard for: ${targetRoot}`);
   const shouldPreFeedAnswers = isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand);
   if (shouldPreFeedAnswers) {
-    output.appendLine("[extension] Prefeeding wizard answers because Windows PowerShell in WSL does not reliably emit Read-Host prompts over pipes.");
+    appendOutputLine(output, "[extension] Prefeeding wizard answers because Windows PowerShell in WSL does not reliably emit Read-Host prompts over pipes.");
   }
 
   const runResult = await vscode.window.withProgress(
@@ -327,7 +344,7 @@ async function runWizardProcess(
     };
 
     const fail = (failureKind: WizardRunFailureKind, message: string): void => {
-      output.appendLine(`[extension] ${message}`);
+      appendOutputLine(output, `[extension] ${message}`);
       terminateProcess(child, output);
       finalize({ exitCode: 1, failureKind, message });
     };
@@ -363,7 +380,8 @@ async function runWizardProcess(
           return;
         }
 
-        output.appendLine(
+        appendOutputLine(
+          output,
           `[extension][wizard-answer] ${JSON.stringify({
             stream,
             promptId: action.promptId,
@@ -413,8 +431,19 @@ async function runWizardProcess(
 }
 
 function serializeWizardAnswersForPrefeed(responses: WizardPromptAnswers): string {
+  const orderedPromptIds: WizardPromptId[] = [
+    "workspaceSelection",
+    "remoteWsl",
+    "wslDistroSelection",
+    "codexRunInWsl",
+    "createWindowsShortcut",
+    "windowsShortcutLocationSelection",
+    "windowsShortcutCustomPath",
+    "ignoreSessions"
+  ];
   const orderedAnswers: string[] = [];
-  for (const value of Object.values(responses)) {
+  for (const promptId of orderedPromptIds) {
+    const value = responses[promptId];
     if (typeof value === "string" && value.length > 0) {
       orderedAnswers.push(value);
     }
@@ -434,7 +463,7 @@ function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    output.appendLine(`[extension] Failed to close wizard stdin: ${message}`);
+    appendOutputLine(output, `[extension] Failed to close wizard stdin: ${message}`);
   }
 
   try {
@@ -443,7 +472,7 @@ function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    output.appendLine(`[extension] Failed to terminate wizard process: ${message}`);
+    appendOutputLine(output, `[extension] Failed to terminate wizard process: ${message}`);
   }
 }
 
@@ -463,9 +492,14 @@ function formatPromptAnswerForLog(promptId: WizardPromptId, answer: string): str
   return "value";
 }
 
-async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAnswers | undefined> {
+async function buildWizardResponses(
+  targetRoot: string,
+  promptContext?: WizardPromptContext
+): Promise<WizardPromptAnswers | undefined> {
   const defaults = await readWizardDefaults(targetRoot);
   const responses: WizardPromptAnswers = {};
+  const effectivePlatform = promptContext?.effectivePlatform ?? process.platform;
+  const effectiveTargetPath = promptContext?.effectiveTargetPath ?? targetRoot;
 
   const workspaceFiles = await findWorkspaceFiles(targetRoot);
   if (workspaceFiles.length > 1) {
@@ -476,11 +510,11 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
     responses.workspaceSelection = String(selected + 1);
   }
 
-  const wslAvailable = process.platform === "win32" && (await isWslAvailable());
+  const wslAvailable = effectivePlatform === "win32" && (await isWslAvailable());
   if (wslAvailable) {
     const remoteDefaultDecision = getRemoteWslDefaultDecision({
-      targetPath: targetRoot,
-      platform: process.platform,
+      targetPath: effectiveTargetPath,
+      platform: effectivePlatform,
       remoteName: vscode.env.remoteName,
       storedDefault: defaults.useRemoteWsl
     });
@@ -524,7 +558,7 @@ async function buildWizardResponses(targetRoot: string): Promise<WizardPromptAns
     }
   }
 
-  if (isWslShortcutTarget(targetRoot, process.platform)) {
+  if (isWslShortcutTarget(effectiveTargetPath, effectivePlatform)) {
     const createShortcut = await promptBoolean(
       "Create Windows shortcut for double-click launch?",
       defaults.windowsShortcutEnabled ?? false
@@ -700,14 +734,15 @@ async function detectPowerShellCommandRuntime(
 ): Promise<{ command?: string }> {
   const detection = await detectPowerShellCommandWithProbe(process.platform, runCommand, process.env);
   if (detection.command) {
-    output.appendLine(`[extension] PowerShell detected: ${detection.command}`);
+    appendOutputLine(output, `[extension] PowerShell detected: ${detection.command}`);
     return { command: detection.command };
   }
 
-  output.appendLine("[extension] PowerShell detection failed. Attempt summary:");
+  appendOutputLine(output, "[extension] PowerShell detection failed. Attempt summary:");
   for (const attempt of detection.attempts) {
     const reason = attempt.stderr.trim().replace(/\s+/g, " ").slice(0, 200);
-    output.appendLine(
+    appendOutputLine(
+      output,
       `[extension] - ${attempt.command}: exit=${attempt.code}${reason ? `, stderr=${reason}` : ""}`
     );
   }
@@ -1055,7 +1090,7 @@ async function reopenWithLauncher(
 
   const appendReopenLog = (message: string) => {
     if (output) {
-      output.appendLine(`[extension][reopen] ${message}`);
+      appendOutputLine(output, `[extension][reopen] ${message}`);
     }
   };
 
