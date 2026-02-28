@@ -238,6 +238,10 @@ async function initializeLauncherForTarget(
 
   output.show(true);
   output.appendLine(`[extension] Running wizard for: ${targetRoot}`);
+  const shouldPreFeedAnswers = isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand);
+  if (shouldPreFeedAnswers) {
+    output.appendLine("[extension] Prefeeding wizard answers because Windows PowerShell in WSL does not reliably emit Read-Host prompts over pipes.");
+  }
 
   const runResult = await vscode.window.withProgress(
     {
@@ -247,7 +251,7 @@ async function initializeLauncherForTarget(
     },
     async (progress) => {
       progress.report({ message: "Running launcher wizard..." });
-      return runWizardProcess(psCommand, args, responses, targetRoot, output);
+      return runWizardProcess(psCommand, args, responses, targetRoot, output, shouldPreFeedAnswers);
     }
   );
   if (runResult.failureKind === "timeout") {
@@ -305,7 +309,8 @@ async function runWizardProcess(
   args: string[],
   responses: WizardPromptAnswers,
   cwd: string,
-  output: vscode.OutputChannel
+  output: vscode.OutputChannel,
+  preFeedAnswers: boolean
 ): Promise<WizardRunResult> {
   return new Promise<WizardRunResult>((resolve) => {
     const child = spawn(command, args, { cwd, env: process.env });
@@ -334,6 +339,10 @@ async function runWizardProcess(
 
       const text = chunk.toString();
       output.append(text);
+
+      if (preFeedAnswers) {
+        return;
+      }
 
       const actions = consumeWizardOutputChunk(parserState, text, responses);
       for (const action of actions) {
@@ -383,6 +392,13 @@ async function runWizardProcess(
       });
     });
 
+    if (preFeedAnswers) {
+      const serializedAnswers = serializeWizardAnswersForPrefeed(responses);
+      if (serializedAnswers.length > 0) {
+        child.stdin.write(serializedAnswers);
+      }
+    }
+
     child.on("close", (code: number | null) => {
       finalize({ exitCode: code ?? 1 });
     });
@@ -394,6 +410,21 @@ async function runWizardProcess(
       );
     }, WIZARD_TIMEOUT_MS);
   });
+}
+
+function serializeWizardAnswersForPrefeed(responses: WizardPromptAnswers): string {
+  const orderedAnswers: string[] = [];
+  for (const value of Object.values(responses)) {
+    if (typeof value === "string" && value.length > 0) {
+      orderedAnswers.push(value);
+    }
+  }
+
+  if (orderedAnswers.length === 0) {
+    return "";
+  }
+
+  return `${orderedAnswers.join("\n")}\n`;
 }
 
 function terminateProcess(child: ChildProcessWithoutNullStreams, output: vscode.OutputChannel): void {
