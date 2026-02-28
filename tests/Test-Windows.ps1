@@ -275,39 +275,6 @@ function Invoke-WizardScriptDirect {
   }
 }
 
-function Invoke-WizardScriptDirect {
-  param(
-    [string]$RepoRoot,
-    [string]$ScriptPath,
-    [string]$TargetPath,
-    [string[]]$Responses,
-    [switch]$DebugMode
-  )
-
-  $inputFile = Join-Path $env:TEMP ("csi-wizard-input-" + [Guid]::NewGuid().ToString("N") + ".txt")
-  try {
-    $payload = if ($Responses.Count -gt 0) { ($Responses -join "`r`n") + "`r`n" } else { "" }
-    Set-Content -LiteralPath $inputFile -Value $payload -NoNewline
-
-    $debugArg = if ($DebugMode) { " -DebugMode" } else { "" }
-    $cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File ""$ScriptPath"" -TargetPath ""$TargetPath""" + $debugArg + " < ""$inputFile"""
-
-    Push-Location $RepoRoot
-    try {
-      cmd /c $cmd | Out-Host
-      if ($LASTEXITCODE -ne 0) {
-        throw "Wizard script failed with exit code $LASTEXITCODE for target $TargetPath"
-      }
-    } finally {
-      Pop-Location
-    }
-  } finally {
-    if (Test-Path -LiteralPath $inputFile -PathType Leaf) {
-      Remove-Item -LiteralPath $inputFile -Force -ErrorAction SilentlyContinue
-    }
-  }
-}
-
 function Invoke-RunnerDryRun {
   param([string]$RunnerPath)
 
