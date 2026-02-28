@@ -643,7 +643,7 @@ async function readWizardDefaults(targetRoot: string): Promise<WizardDefaults> {
 async function detectPowerShellCommandRuntime(
   output: vscode.OutputChannel
 ): Promise<{ command?: string }> {
-  const detection = await detectPowerShellCommandWithProbe(process.platform, runCommand);
+  const detection = await detectPowerShellCommandWithProbe(process.platform, runCommand, process.env);
   if (detection.command) {
     output.appendLine(`[extension] PowerShell detected: ${detection.command}`);
     return { command: detection.command };
