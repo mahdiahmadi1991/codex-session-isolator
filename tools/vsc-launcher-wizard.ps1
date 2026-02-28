@@ -299,6 +299,50 @@ function Convert-LinuxPathToWindowsPath {
   }
 }
 
+function Convert-WindowsPathToLinuxPath {
+  param(
+    [string]$InputPath,
+    [string]$Distro
+  )
+
+  if ($InputPath -match '^[\\]{2}(?:wsl\.localhost|wsl\$)[\\]([^\\]+)[\\](.*)$') {
+    $distroInPath = $Matches[1]
+    if ([string]::IsNullOrWhiteSpace($Distro) -or $distroInPath -ieq $Distro) {
+      $rest = $Matches[2] -replace '\\', '/'
+      return "/$rest"
+    }
+    throw "WSL path '$InputPath' belongs to distro '$distroInPath', but launcher is configured for distro '$Distro'."
+  }
+
+  if ($InputPath -match '^/') {
+    return $InputPath
+  }
+
+  if ($InputPath -match '^[A-Za-z]:[\\/]') {
+    $drive = $InputPath.Substring(0, 1).ToLowerInvariant()
+    $rest = $InputPath.Substring(2) -replace '\\', '/'
+    if (-not $rest.StartsWith('/')) {
+      $rest = '/' + $rest
+    }
+    return "/mnt/$drive$rest"
+  }
+
+  $normalized = $InputPath -replace '\\', '/'
+  $wslArgs = @()
+  if ([string]::IsNullOrWhiteSpace($Distro)) {
+    $wslArgs = @("--", "wslpath", "-a", "-u", $normalized)
+  } else {
+    $wslArgs = @("-d", $Distro, "--", "wslpath", "-a", "-u", $normalized)
+  }
+  $convertedRaw = & wsl.exe @wslArgs 2>&1
+  $converted = ($convertedRaw | Out-String).Trim()
+  $distroLabel = if ([string]::IsNullOrWhiteSpace($Distro)) { "<default>" } else { $Distro }
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
+    throw "Failed to convert path '$InputPath' to Linux path in distro '$distroLabel'. wslpath: $converted"
+  }
+  return $converted
+}
+
 function Join-WindowsPath {
   param(
     [string]$BasePath,
