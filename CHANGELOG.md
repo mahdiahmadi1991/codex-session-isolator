@@ -54,6 +54,7 @@ All notable changes to this project are documented in this file.
 - Marketplace verification step now retries metadata checks and degrades to warning when version propagation is delayed, while still failing on explicit channel mismatch.
 - Extension publish workflow now avoids heredoc-based inline Node scripts in CI steps to prevent shell parsing failures on hosted runners.
 - Extension package version bumped to `0.3.8` for Marketplace pre-release rollout of channel/readme/workflow fixes.
+- Remote WSL launcher mode now isolates the VS Code WSL server per project with `.vsc_launcher/vscode-agent` (`VSCODE_AGENT_FOLDER`) to prevent `CODEX_HOME` leakage between concurrently opened projects.
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.

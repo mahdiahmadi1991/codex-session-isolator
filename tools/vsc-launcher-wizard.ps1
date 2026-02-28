@@ -1560,12 +1560,16 @@ try {
 
   $shouldUseIsolatedUserData = $forceIsolatedCodeProcess -and -not [bool]$config.useRemoteWsl
   $userDataDir = $null
+  $remoteWslAgentDir = $null
   if ($shouldUseIsolatedUserData) {
     $userDataDir = Join-Path $PSScriptRoot "vscode-user-data"
     New-Item -ItemType Directory -Force -Path $userDataDir | Out-Null
     Write-LauncherLog ("VSCodeUserDataDir={0}" -f $userDataDir)
   } elseif ($forceIsolatedCodeProcess -and [bool]$config.useRemoteWsl) {
     Write-LauncherLog "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode."
+    $remoteWslAgentDir = Join-Path $PSScriptRoot "vscode-agent"
+    New-Item -ItemType Directory -Force -Path $remoteWslAgentDir | Out-Null
+    Write-LauncherLog ("RemoteWSLAgentDir={0}" -f $remoteWslAgentDir)
   }
 
   if ($DryRun) {
@@ -1573,6 +1577,8 @@ try {
     Write-Host ("[dry-run] CODEX_HOME: {0}" -f $codexHome)
     if ($shouldUseIsolatedUserData -and -not [string]::IsNullOrWhiteSpace($userDataDir)) {
       Write-Host ("[dry-run] VSCode user-data-dir: {0}" -f $userDataDir)
+    } elseif (-not [string]::IsNullOrWhiteSpace($remoteWslAgentDir)) {
+      Write-Host ("[dry-run] Remote WSL VS Code agent dir: {0}" -f $remoteWslAgentDir)
     }
     $script:ExitCode = 0
     return
@@ -1593,10 +1599,21 @@ try {
 
     $linuxTarget = Convert-WindowsPathToLinuxPath -InputPath $launchTarget -Distro $config.wslDistro
     $targetB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($linuxTarget))
+    $remoteWslAgentDirLinux = $null
+    $agentDirB64 = ""
+    if (-not [string]::IsNullOrWhiteSpace($remoteWslAgentDir)) {
+      $remoteWslAgentDirLinux = Convert-WindowsPathToLinuxPath -InputPath $remoteWslAgentDir -Distro $config.wslDistro
+      $agentDirB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteWslAgentDirLinux))
+    }
     $bashScript = @"
 set -euo pipefail
 target_b64='$targetB64'
 target=`$(printf '%s' "`$target_b64" | base64 -d)
+agent_b64='$agentDirB64'
+vscode_agent_folder=""
+if [ -n "`$agent_b64" ]; then
+  vscode_agent_folder=`$(printf '%s' "`$agent_b64" | base64 -d)
+fi
 if [ -z "`$target" ]; then
   echo "Resolved target is empty."
   exit 2
@@ -1609,6 +1626,10 @@ fi
 codex_home="`$base/.codex"
 mkdir -p "`$codex_home"
 export CODEX_HOME="`$codex_home"
+if [ -n "`$vscode_agent_folder" ]; then
+  mkdir -p "`$vscode_agent_folder"
+  export VSCODE_AGENT_FOLDER="`$vscode_agent_folder"
+fi
 if ! command -v code >/dev/null 2>&1; then
   echo "VS Code command 'code' not found in WSL PATH."
   exit 127
@@ -1623,6 +1644,9 @@ code --new-window "`$target"
 
     Write-LauncherLog ("Mode=RemoteWSL Distro={0}" -f $config.wslDistro)
     Write-LauncherLog ("WSLTarget={0}" -f $linuxTarget)
+    if (-not [string]::IsNullOrWhiteSpace($remoteWslAgentDirLinux)) {
+      Write-LauncherLog ("RemoteWSLAgentDirLinux={0}" -f $remoteWslAgentDirLinux)
+    }
     Write-LauncherLog ("WSLScriptLinuxPath={0}" -f $tempScriptLinux)
     if ($script:EnableLog -and -not [string]::IsNullOrWhiteSpace($script:LogFilePath)) {
       $launcherLogsDir = Split-Path -Parent $script:LogFilePath

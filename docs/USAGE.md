@@ -122,7 +122,7 @@ Wizard behavior:
   - `Ignore Codex chat sessions in gitignore`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
-- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it.
+- In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it, and instead uses a project-scoped `VSCODE_AGENT_FOLDER` under `.vsc_launcher/vscode-agent` so the WSL VS Code server (and Codex child processes) stay isolated per project.
 - For local Windows + Codex-in-WSL mode, automatically sets profile-scoped `chatgpt.cliExecutable` to a generated WSL wrapper so Codex app-server receives project `CODEX_HOME`.
 
 ## Windows

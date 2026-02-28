@@ -516,11 +516,16 @@ try {
   $dryRun4 = Invoke-ExternalPowerShellScript -ScriptPath $runner4 -Arguments @("-DryRun", "-Log")
   Assert-True ($dryRun4.ExitCode -eq 0) "Remote-mode dry-run failed."
   Assert-NotContains $dryRun4.Output "VSCode user-data-dir" "Remote-mode dry-run should not print user-data-dir."
+  Assert-Contains $dryRun4.Output "Remote WSL VS Code agent dir:" "Remote-mode dry-run should print project-scoped WSL agent dir."
+  Assert-Contains $dryRun4.Output ".vsc_launcher\\vscode-agent" "Remote-mode dry-run agent dir path mismatch."
   Assert-True (-not (Test-Path -LiteralPath (Join-Path $meta4 "vscode-user-data") -PathType Any)) "Remote mode must not create vscode-user-data."
+  Assert-True (Test-Path -LiteralPath (Join-Path $meta4 "vscode-agent") -PathType Container) "Remote mode should create project-scoped vscode-agent dir."
 
   $latestLog4 = Get-LatestLog -LogsDir (Join-Path $meta4 "logs")
   $log4 = Get-Content -LiteralPath $latestLog4 -Raw
   Assert-Contains $log4 "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode." "Remote mode note missing in logs."
+  Assert-Contains $log4 "RemoteWSLAgentDir=" "Remote mode log should record Windows agent dir."
+  Assert-Contains $log4 "vscode-agent" "Remote mode log should mention project agent dir."
 
   Write-Host "[test] Case 5: concurrent launcher runs isolate per-project state"
   $case5 = Join-Path $tmpRoot "case5-concurrency"
@@ -751,6 +756,8 @@ try {
         Assert-Contains $case6LogC ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6C log should show remote WSL mode."
         Assert-Contains $case6LogC "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6C should log Linux target path."
         Assert-Contains $case6LogC "RemoteWSLNote=Skipping isolated VS Code user-data-dir in Remote WSL mode." "Case 6C should skip isolated user-data-dir in remote mode."
+        Assert-Contains $case6LogC "RemoteWSLAgentDirLinux=/tmp/csi-windows-tests-wsl-" "Case 6C should log Linux agent dir."
+        Assert-Contains $case6LogC "/.vsc_launcher/vscode-agent" "Case 6C agent dir should stay project-scoped."
 
         # Matrix D: VS Code in Remote WSL, Codex in WSL flag (Run in WSL = true)
         Set-Case6Config -UseRemoteWsl $true -CodexRunInWsl $true
@@ -760,6 +767,8 @@ try {
         $case6LogD = Get-Content -LiteralPath $case6LogDPath -Raw
         Assert-Contains $case6LogD ("Mode=RemoteWSL Distro={0}" -f $case6Distro) "Case 6D log should show remote WSL mode."
         Assert-Contains $case6LogD "WSLTarget=/tmp/csi-windows-tests-wsl-" "Case 6D should log Linux target path."
+        Assert-Contains $case6LogD "RemoteWSLAgentDirLinux=/tmp/csi-windows-tests-wsl-" "Case 6D should log Linux agent dir."
+        Assert-Contains $case6LogD "/.vsc_launcher/vscode-agent" "Case 6D agent dir should stay project-scoped."
       } finally {
         if ([string]::IsNullOrWhiteSpace($case6ForceNoWsl)) {
           Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue

@@ -57,4 +57,5 @@ Run Extension Development Host:
 - Extension operations require a trusted workspace.
 - Wizard creates backups before overwriting managed files under `.vsc_launcher/backups/`.
 - Because launcher sessions use project-local `.codex`, chat/session visibility is isolated per project.
+- Remote WSL launcher runs also isolate the VS Code WSL server per project by using `.vsc_launcher/vscode-agent` as `VSCODE_AGENT_FOLDER`.
 - Separate projects can keep separate account/API-key context.

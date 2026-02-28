@@ -39,6 +39,7 @@ Expected:
 - In local Windows mode, it creates project-scoped VS Code user data under `.vsc_launcher/vscode-user-data`.
 - In Remote WSL mode, it does not create `.vsc_launcher/vscode-user-data`.
 - In local Windows + Codex-in-WSL mode, it sets profile-level `chatgpt.cliExecutable` to `.vsc_launcher/codex-wsl-wrapper.sh`.
+- In Remote WSL mode, it uses `.vsc_launcher/vscode-agent` as a project-scoped `VSCODE_AGENT_FOLDER` to avoid sharing a single WSL VS Code server across projects.
 - For WSL-hosted targets, wizard can generate `Open <project>.lnk` in selected location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 
 ## 0.1) No WSL available
@@ -152,6 +153,7 @@ Expected:
 - State does not leak between projects.
 - In launcher logs, `CODEX_HOME` points to each project's own `.codex`.
 - In wrapper logs, `CODEX_HOME_FORCED` points to each project's own `.codex`.
+- In Remote WSL launcher logs, `RemoteWSLAgentDirLinux` points to each project's own `.vsc_launcher/vscode-agent`.
 
 ## 8) Default behavior not affected
 
