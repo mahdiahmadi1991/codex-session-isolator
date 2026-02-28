@@ -231,7 +231,14 @@ if [ "`$dry_run" = "1" ]; then
 fi
 
 command -v code >/dev/null 2>&1 || { echo "VS Code command 'code' not found in WSL PATH."; exit 127; }
-code --new-window "`$launch_target"
+if command -v setsid >/dev/null 2>&1; then
+  setsid -f code --new-window "`$launch_target" >/dev/null 2>&1
+elif command -v nohup >/dev/null 2>&1; then
+  nohup code --new-window "`$launch_target" >/dev/null 2>&1 &
+else
+  code --new-window "`$launch_target" >/dev/null 2>&1 &
+fi
+sleep 1
 "@
   $bashScript = ($bashScript -replace "`r`n", "`n") -replace "`r", "`n"
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)

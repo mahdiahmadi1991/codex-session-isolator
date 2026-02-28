@@ -25,6 +25,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Wizard now updates `.gitignore` only when the file already exists in target root; it no longer creates `.gitignore` automatically for non-git projects.
+- Wizard managed ignore entry now uses `vsc_launcher.*` so Windows (`.bat`) and Unix (`.sh`) launchers are both covered consistently.
+- Extension reopen flow now validates Windows launcher spawn with explicit `cmd.exe` start diagnostics, and `codexSessionIsolator.closeWindowAfterReopen` default is now `false` (keep current window open unless explicitly enabled).
 - README and usage docs now include extension-based workflow.
 - Fixed Windows canonical launcher WSL path execution to escape Bash command substitutions correctly in PowerShell here-strings (prevents `printf` PowerShell resolution error for `\\wsl$...` targets).
 - Fixed Windows canonical launcher Remote WSL invocation to execute a temporary UTF-8 bash script file instead of inline `bash -lc` multiline text, avoiding quoting/truncation syntax errors.
@@ -51,6 +54,20 @@ All notable changes to this project are documented in this file.
 - Marketplace verification step now retries metadata checks and degrades to warning when version propagation is delayed, while still failing on explicit channel mismatch.
 - Extension publish workflow now avoids heredoc-based inline Node scripts in CI steps to prevent shell parsing failures on hosted runners.
 - Extension package version bumped to `0.3.8` for Marketplace pre-release rollout of channel/readme/workflow fixes.
+- Remote WSL launcher mode now isolates the VS Code WSL server per project with `.vsc_launcher/vscode-agent` (`VSCODE_AGENT_FOLDER`) to prevent `CODEX_HOME` leakage between concurrently opened projects.
+- Wizard now auto-selects the matching WSL distro when the target path already reveals it, and Windows WSL shortcuts now launch through `cmd.exe` + `wsl.exe` instead of targeting the generated `.bat` directly.
+- WSL-hosted targets now always generate `vsc_launcher.sh` even when the wizard runs under Windows PowerShell, remove stale opposite launcher files, and Windows WSL shortcuts invoke the Unix launcher through `bash` for reliable double-click execution.
+- Extension current-project setup flows now finish with an explicit reopen confirmation prompt, and confirmed reopen closes the current window after launching the isolated window.
+- Extension command title `Setup (Initialize & Reopen)` was renamed to `Setup Launcher` to match the new confirm-before-reopen behavior.
+- Extension now waits briefly before closing the current window after a confirmed reopen, so `code --new-window` has time to complete handoff and open the new window reliably.
+- Extension logs and wizard logs now use a consistent structured format (`timestamp level scope message`), and the default Command Palette list is reduced to the two primary commands (`Setup Launcher`, `Reopen With Launcher`).
+- Unix/WSL reopen now executes the launcher directly before shell fallbacks, and generated Unix launchers detach `code --new-window` via `setsid`/`nohup` before exit for more reliable reopen handoff.
+- Unix/WSL reopen now first dispatches the launcher through a detached shell wrapper from the extension itself, reducing the chance that closing the current window interrupts launcher startup.
+- On WSL, `Reopen With Launcher` now attempts to launch the project's generated Windows shortcut first (when shortcut generation is enabled), then falls back to the Unix launcher path if no shortcut is available.
+- The shell wizard helper (`tools/vsc-launcher.sh`) now probes PowerShell runtimes before use and, when running in WSL, can fall back to `pwsh.exe` / `powershell.exe` with WSL path translation.
+- The shell wizard helper now exits cleanly after successful wizard runs, and in WSL it prefers Windows PowerShell runtimes first to avoid broken native `pwsh` installs blocking launcher setup.
+- Extension launcher setup no longer shows the extra pre-run confirmation modal before the wizard starts.
+- Usage docs were aligned with the slimmer Command Palette command set (`Setup Launcher`, `Reopen With Launcher` as the primary entries).
 - Extension metadata and README content were enriched for Marketplace readiness.
 - Extension identifier namespace was refined to `codexSessionIsolator` and package id to `codex-session-isolator`.
 - Extension publisher id for Marketplace packaging was updated to `2ma`.
@@ -67,6 +84,8 @@ All notable changes to this project are documented in this file.
 - Dependabot GitHub Actions updates now target `pre-release` branch to align with branch policy.
 - README quick-start now includes install/setup/verify steps for extension users and optional one-click setup command usage when available.
 - README now includes actionable cleanup/uninstall and minimal troubleshooting steps with explicit log locations.
+- Canonical Unix launchers now use the same detached `code --new-window` strategy (`setsid`/`nohup` + short wait) as generated Unix launchers for more reliable handoff.
+- Linux and Windows automated suites were expanded to validate canonical launchers, modern WSL-target generation (`vsc_launcher.sh` + `config.env`), Windows WSL shortcut generation, and current helper invocation paths from a WSL checkout.
 
 ## [0.3.2] - 2026-02-25
 

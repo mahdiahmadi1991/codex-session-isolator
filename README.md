@@ -135,8 +135,11 @@ Wizard defaults:
 
 The extension adds in-editor commands for wizard UX and launcher operations:
 
-- `Codex Session Isolator: Initialize Launcher`
+- Primary Command Palette commands:
+- `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- Utility commands (available for direct use but hidden from the default Command Palette list):
+- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -154,8 +157,8 @@ Quick start (Marketplace install -> setup -> verify):
 1. Install `2ma.codex-session-isolator` from VS Code Marketplace.
 2. Open your project in VS Code.
 3. Setup launcher:
-   - If available in your installed version, run `Codex Session Isolator: Setup (Initialize & Reopen)`.
-   - Otherwise run `Codex Session Isolator: Initialize Launcher`, then `Codex Session Isolator: Reopen With Launcher`.
+   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
+   - Otherwise run `Codex Session Isolator: Initialize Launcher`, then confirm the final reopen prompt for the current project.
 4. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`

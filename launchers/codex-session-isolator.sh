@@ -44,6 +44,18 @@ mkdir -p "$codex_home"
 
 export CODEX_HOME="$codex_home"
 
+start_code_detached() {
+  local target="$1"
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -f code --new-window "$target" >/dev/null 2>&1
+  elif command -v nohup >/dev/null 2>&1; then
+    nohup code --new-window "$target" >/dev/null 2>&1 &
+  else
+    code --new-window "$target" >/dev/null 2>&1 &
+  fi
+}
+
 if [[ "$dry_run" == "--dry-run" ]]; then
   echo "[dry-run] Local launch target: $launch_target"
   echo "[dry-run] Local CODEX_HOME: $codex_home"
@@ -55,4 +67,5 @@ if ! command -v code >/dev/null 2>&1; then
   exit 127
 fi
 
-code --new-window "$launch_target"
+start_code_detached "$launch_target"
+sleep 1

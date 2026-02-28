@@ -7,7 +7,7 @@
   ],
   "settings": {
     "chatgpt.openOnStartup": true,
-    "chatgpt.runCodexInWindowsSubsystemForLinux": false,
+    "chatgpt.runCodexInWindowsSubsystemForLinux": true,
     "files.exclude": {
       "**/.vsc_launcher": true,
       "**/*.vsix": true,
@@ -17,7 +17,8 @@
       "**/.vsc_launcher": true,
       "**/node_modules": true,
       "**/*.vsix": true
-    }
+    },
+    "chatgpt.composerEnterBehavior": "cmdIfMultiline"
   },
   "extensions": {
     "recommendations": [

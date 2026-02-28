@@ -8,12 +8,12 @@ Automated CI coverage:
 - Linux: `tests/test-linux.sh`
 - macOS: `tests/test-linux.sh`
 
-Windows automated matrix now also validates a WSL UNC project target across four launcher modes:
+Windows automated matrix now also validates a WSL UNC project target with the current WSL-native launcher flow:
 
-- VS Code local + Codex local
-- VS Code local + Codex Run in WSL
-- VS Code Remote WSL + Codex local flag
-- VS Code Remote WSL + Codex Run in WSL flag
+- `vsc_launcher.sh` generation for WSL-hosted targets
+- `.vsc_launcher/config.env` generation (instead of Windows `runner.ps1`)
+- Windows shortcut generation for WSL-hosted targets
+- project-root-only workspace discovery and WSL-aware default selection
 
 ## 0) Wizard generation flow
 
@@ -28,10 +28,10 @@ Expected:
 - If target has one workspace file, no workspace prompt is shown and workspace is selected automatically.
 - If target has no workspace file, wizard creates `<project-name>.code-workspace` and selects it automatically.
 - If target has multiple workspace files, wizard asks to select one.
-- If WSL is available, wizard prompts for WSL options and Codex WSL setting.
-- Wizard always prompts for session ignore policy.
+- If WSL is available, wizard asks only the WSL questions that are relevant for the detected target type and can auto-select/infer answers when the target path already makes them obvious.
+- Wizard reuses saved defaults where possible, so some prompts may be skipped entirely on repeat runs.
 - It creates/replaces one launcher file in target directory plus `.vsc_launcher` metadata.
-- It updates managed `.gitignore` block.
+- If `.gitignore` already exists, it updates managed `.gitignore` block.
 - It writes `.vscode/settings.json` with:
   - `chatgpt.openOnStartup = true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux = <selected>`
@@ -39,7 +39,8 @@ Expected:
 - In local Windows mode, it creates project-scoped VS Code user data under `.vsc_launcher/vscode-user-data`.
 - In Remote WSL mode, it does not create `.vsc_launcher/vscode-user-data`.
 - In local Windows + Codex-in-WSL mode, it sets profile-level `chatgpt.cliExecutable` to `.vsc_launcher/codex-wsl-wrapper.sh`.
-- For WSL-hosted targets, wizard can generate `Open <project>.lnk` in selected location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
+- In Remote WSL mode, it uses `.vsc_launcher/vscode-agent` as a project-scoped `VSCODE_AGENT_FOLDER` to avoid sharing a single WSL VS Code server across projects.
+- For WSL-hosted targets, wizard generates `vsc_launcher.sh` plus `.vsc_launcher/config.env` and can also generate `Open <project>.lnk` in a selected location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 
 ## 0.1) No WSL available
 
@@ -152,6 +153,7 @@ Expected:
 - State does not leak between projects.
 - In launcher logs, `CODEX_HOME` points to each project's own `.codex`.
 - In wrapper logs, `CODEX_HOME_FORCED` points to each project's own `.codex`.
+- In Remote WSL launcher logs, `RemoteWSLAgentDirLinux` points to each project's own `.vsc_launcher/vscode-agent`.
 
 ## 8) Default behavior not affected
 
@@ -187,6 +189,7 @@ Expected:
 
 - Generated `.vsc_launcher/config.json` has `"enableLoggingByDefault": true`.
 - `.vsc_launcher/logs` includes launcher and wizard run logs with execution details.
+- For WSL-hosted targets, the generated launcher uses `.vsc_launcher/config.env` and the launcher script itself contains the detached `code` dispatch (`setsid`/`nohup`) plus a short post-dispatch wait.
 
 ## 11) Wizard default reuse
 

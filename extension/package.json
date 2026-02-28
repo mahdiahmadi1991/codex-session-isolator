@@ -56,7 +56,7 @@
       },
       {
         "command": "codexSessionIsolator.setup",
-        "title": "Codex Session Isolator: Setup (Initialize & Reopen)"
+        "title": "Codex Session Isolator: Setup Launcher"
       },
       {
         "command": "codexSessionIsolator.reopenWithLauncher",
@@ -76,7 +76,7 @@
       },
       {
         "command": "codexProjectIsolator.setup",
-        "title": "Codex Session Isolator (Legacy): Setup (Initialize & Reopen)"
+        "title": "Codex Session Isolator (Legacy): Setup Launcher"
       },
       {
         "command": "codexProjectIsolator.reopenWithLauncher",
@@ -112,6 +112,18 @@
         {
           "command": "codexProjectIsolator.openConfig",
           "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.initialize",
+          "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.openLogs",
+          "when": "false"
+        },
+        {
+          "command": "codexSessionIsolator.openConfig",
+          "when": "false"
         }
       ]
     },
@@ -125,13 +137,8 @@
         },
         "codexSessionIsolator.closeWindowAfterReopen": {
           "type": "boolean",
-          "default": true,
-          "description": "Close current VS Code window after launching project launcher."
-        },
-        "codexSessionIsolator.requireConfirmation": {
-          "type": "boolean",
-          "default": true,
-          "description": "Require explicit confirmation before initializing a launcher."
+          "default": false,
+          "description": "Close current VS Code window after launching project launcher (if disabled, current window stays open)."
         }
       }
     }
