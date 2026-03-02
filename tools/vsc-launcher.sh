@@ -15,7 +15,7 @@ is_wsl_runtime() {
 
 probe_powershell_runtime() {
   local command_name="$1"
-  "$command_name" -NoProfile -Command "exit 0" >/dev/null 2>&1
+  bash -c 'ulimit -c 0; "$1" -NoProfile -Command "exit 0" >/dev/null 2>&1' _ "$command_name" >/dev/null 2>&1
 }
 
 convert_for_windows_powershell() {

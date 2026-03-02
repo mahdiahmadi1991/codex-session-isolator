@@ -4,6 +4,8 @@ All notable changes to this extension are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-03-02
+
 ### Changed
 
 - Version aligned to repository release line (`0.3.4`) so extension version and stable git tag can match.
