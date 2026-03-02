@@ -7,3 +7,6 @@ node_modules/**
 package-lock.json
 tsconfig.json
 scripts/sync-wizard.mjs
+*.vsix
+*.vsix.sha256
+test/**
