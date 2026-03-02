@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-03-02
+
 ### Added
 
 - New VS Code extension workspace (`extension/`) as a hybrid UX layer over launcher backend.

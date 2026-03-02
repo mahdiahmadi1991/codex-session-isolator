@@ -53,17 +53,18 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 echo "[test] Wrapper reports missing PowerShell cleanly when unavailable"
-if ! command -v pwsh >/dev/null 2>&1 && ! command -v powershell >/dev/null 2>&1; then
-  set +e
-  wrapper_output="$("$WIZARD_HELPER" --help 2>&1)"
-  wrapper_exit=$?
-  set -e
-  assert_exit_code "$wrapper_exit" 127 "Wrapper should exit 127 when no PowerShell runtime is available."
+set +e
+wrapper_output="$("$WIZARD_HELPER" --help 2>&1)"
+wrapper_exit=$?
+set -e
+
+if [[ "$wrapper_exit" -eq 127 ]]; then
   assert_contains "$wrapper_output" "PowerShell is required to run the wizard helper." "Wrapper error message mismatch."
   echo "[test] Skip generated-launcher integration: native PowerShell runtime not installed."
   echo "[test] Linux tests passed (limited coverage in this environment)."
   exit 0
 fi
+assert_exit_code "$wrapper_exit" 0 "Wrapper should return usage successfully when a working PowerShell runtime is available."
 
 project_dir="$tmp_dir/project"
 mkdir -p "$project_dir"
@@ -71,8 +72,7 @@ workspace="$project_dir/sample.code-workspace"
 printf '{}' > "$workspace"
 
 echo "[test] Wizard helper usage output"
-helper_output="$("$WIZARD_HELPER" --help)"
-assert_contains "$helper_output" "Usage:" "Wizard helper usage output mismatch."
+assert_contains "$wrapper_output" "Usage:" "Wizard helper usage output mismatch."
 
 echo "[test] Generate project launcher"
 printf 'n\n' | "$WIZARD_HELPER" "$project_dir" >/tmp/csi-linux-wizard.out 2>&1
