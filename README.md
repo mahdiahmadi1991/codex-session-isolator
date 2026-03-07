@@ -103,7 +103,7 @@ The wizard asks for:
 - Remote WSL mode
 - whether Codex should run in WSL for this project (only when Remote WSL mode is `Yes`)
 - whether to create an extra Windows Desktop shortcut copy (only for WSL-hosted targets)
-- whether Codex chat sessions should be git-ignored
+- whether Codex session history should be tracked in git (`config.toml` always stays trackable)
 
 Wizard defaults:
 
@@ -117,7 +117,7 @@ Wizard defaults:
   - WSL UNC path (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project = Yes`
   - WSL distro default = your Windows default distro (`wsl --status`)
-  - `Ignore Codex chat sessions in gitignore = No`
+  - `Track Codex session history in git = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
 - For WSL-hosted targets (WSL UNC from Windows, or wizard executed inside WSL), wizard can generate a Windows shortcut named `Open <project>.lnk`.
