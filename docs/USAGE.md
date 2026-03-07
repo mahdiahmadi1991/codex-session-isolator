@@ -25,7 +25,7 @@ Session visibility and credentials:
 - Previous chats from your default/global Codex home are not shown in the isolated launcher session.
 - You can operate different projects with different Codex account/API-key context because each project uses its own `.codex`.
 
-## VS Code extension (preview)
+## VS Code extension
 
 If you use the extension layer (`extension/`), run these commands from command palette:
 
@@ -98,6 +98,8 @@ Wizard behavior:
 
 - Replaces generated launcher files if they already exist.
 - Updates a managed `.gitignore` block only when `.gitignore` already exists in target folder.
+- The managed `.gitignore` block always keeps `.codex/config.toml` trackable.
+- If `Track Codex session history in git` is enabled, the managed `.gitignore` block also keeps `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` trackable.
 - Creates safety backups before overwriting managed files:
   - `.vsc_launcher/backups/<timestamp-pid>/`
 - Always updates `.vscode/settings.json` with:
@@ -122,7 +124,7 @@ Wizard behavior:
   - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project` is prompted only when Remote WSL mode is `Yes` (default `Yes`)
   - WSL distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro (`wsl --status`)
-  - `Ignore Codex chat sessions in gitignore`: `No`
+  - `Track Codex session history in git`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
 - In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it, and instead uses a project-scoped `VSCODE_AGENT_FOLDER` under `.vsc_launcher/vscode-agent` so the WSL VS Code server (and Codex child processes) stay isolated per project.

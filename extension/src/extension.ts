@@ -20,6 +20,7 @@ import {
 type WizardDefaults = {
   useRemoteWsl?: boolean;
   codexRunInWsl?: boolean;
+  trackSessionHistory?: boolean;
   ignoreSessions?: boolean;
   windowsShortcutEnabled?: boolean;
   windowsShortcutLocation?: "projectRoot" | "desktop" | "startMenu" | "custom";
@@ -533,7 +534,7 @@ function serializeWizardAnswersForPrefeed(responses: WizardPromptAnswers): strin
     "createWindowsShortcut",
     "windowsShortcutLocationSelection",
     "windowsShortcutCustomPath",
-    "ignoreSessions"
+    "trackSessionHistory"
   ];
   const orderedAnswers: string[] = [];
   for (const promptId of orderedPromptIds) {
@@ -684,14 +685,14 @@ async function buildWizardResponses(
     }
   }
 
-  const ignoreSessions = await promptBoolean(
-    "Ignore Codex chat sessions in gitignore?",
-    defaults.ignoreSessions ?? false
+  const trackSessionHistory = await promptBoolean(
+    "Track Codex session history in git? (config.toml stays trackable)",
+    defaults.trackSessionHistory ?? false
   );
-  if (ignoreSessions === undefined) {
+  if (trackSessionHistory === undefined) {
     return undefined;
   }
-  responses.ignoreSessions = ignoreSessions ? "y" : "n";
+  responses.trackSessionHistory = trackSessionHistory ? "y" : "n";
 
   return responses;
 }
@@ -822,6 +823,9 @@ async function readWizardDefaults(targetRoot: string): Promise<WizardDefaults> {
 
     const raw = await fs.readFile(defaultsPath, "utf8");
     const parsed = JSON.parse(raw) as WizardDefaults;
+    if (typeof parsed.trackSessionHistory !== "boolean" && typeof parsed.ignoreSessions === "boolean") {
+      parsed.trackSessionHistory = !parsed.ignoreSessions;
+    }
     return parsed ?? {};
   } catch {
     return {};

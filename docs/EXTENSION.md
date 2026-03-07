@@ -55,7 +55,7 @@ Run Extension Development Host:
   - Remote WSL launch: `Yes`
   - Codex run in WSL: `Yes`
   - Distro default: Windows default distro
-  - Ignore Codex sessions in gitignore: `No`
+  - Track Codex session history in git: `No`
 - Generated files remain project-local (`vsc_launcher.*`, `.vsc_launcher/`, `.codex/` policy).
 - Bundled wizard script is synced from `tools/vsc-launcher-wizard.ps1` via `extension/scripts/sync-wizard.mjs`.
 - Extension operations require a trusted workspace.

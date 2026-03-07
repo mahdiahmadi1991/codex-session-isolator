@@ -154,6 +154,8 @@ Expected:
 - In launcher logs, `CODEX_HOME` points to each project's own `.codex`.
 - In wrapper logs, `CODEX_HOME_FORCED` points to each project's own `.codex`.
 - In Remote WSL launcher logs, `RemoteWSLAgentDirLinux` points to each project's own `.vsc_launcher/vscode-agent`.
+- When wizard updates an existing `.gitignore`, `.codex/config.toml` remains trackable in both tracking modes.
+- When `Track Codex session history in git` is enabled, `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` remain trackable.
 
 ## 8) Default behavior not affected
 

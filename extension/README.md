@@ -60,6 +60,7 @@ Expected value:
 - Stable uses even patch versions (`x.y.0`, `x.y.2`, ...).
 - Pre-release uses odd patch versions (`x.y.1`, `x.y.3`, ...).
 - The same numeric version is never reused across both channels.
+- If a newer pre-release build exists in Marketplace, VS Code can still show a `Preview` badge on the extension details page even when the installed build is a stable version or a locally installed VSIX.
 
 Install pre-release build from VS Code:
 
@@ -79,7 +80,7 @@ Default wizard answers on Windows + WSL are context-aware:
 - WSL UNC path (`\\wsl$\...`): Remote WSL launch `Yes`
 - Codex run in WSL: prompted only when Remote WSL launch is `Yes` (default `Yes`)
 - Distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro
-- Ignore Codex chat sessions in gitignore: `No`
+- Track Codex session history in git: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
 For WSL-hosted targets, wizard can generate a Windows shortcut `Open <project>.lnk` and lets you choose location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
