@@ -42,7 +42,7 @@ code --list-extensions | findstr codex-session-isolator
 
 ## Manual smoke test
 
-1. Run `Codex Session Isolator: Initialize Launcher`.
+1. Run `Codex Session Isolator: Setup Launcher`.
 2. Run `Codex Session Isolator: Reopen With Launcher`.
 3. Verify project-local `CODEX_HOME`.
 4. Check `.vsc_launcher/logs`.

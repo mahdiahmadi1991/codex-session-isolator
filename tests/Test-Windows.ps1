@@ -275,6 +275,26 @@ function Invoke-WizardScriptDirect {
   }
 }
 
+function Invoke-Rollback {
+  param(
+    [string]$RepoRoot,
+    [string]$TargetPath,
+    [switch]$DebugMode
+  )
+
+  $helperPath = Join-Path $RepoRoot "tools\vsc-launcher.ps1"
+  $arguments = @($TargetPath, "--rollback")
+  if ($DebugMode) {
+    $arguments += "--debug"
+  }
+
+  $result = Invoke-ExternalPowerShellScript -ScriptPath $helperPath -Arguments $arguments
+  if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
+    $result.Output | Out-Host
+  }
+  return $result
+}
+
 function Invoke-RunnerDryRun {
   param([string]$RunnerPath)
 
@@ -389,12 +409,14 @@ try {
   $runner2 = Join-Path $meta2 "runner.ps1"
   $config2 = Join-Path $meta2 "config.json"
   $defaults2 = Join-Path $meta2 "wizard.defaults.json"
+  $rollbackManifest2 = Join-Path $meta2 "rollback.manifest.json"
   $vscodeSettings2 = Join-Path $case2 ".vscode\settings.json"
 
   Assert-True (Test-Path -LiteralPath $launcher2 -PathType Leaf) "Generated launcher not found."
   Assert-True ($wslBridge2.Count -eq 0) "WSL shortcut should not be generated for local Windows targets."
   Assert-True (Test-Path -LiteralPath $runner2 -PathType Leaf) "Generated runner not found."
   Assert-True (Test-Path -LiteralPath $config2 -PathType Leaf) "Generated config not found."
+  Assert-True (Test-Path -LiteralPath $rollbackManifest2 -PathType Leaf) "Rollback manifest not found."
   Assert-HiddenOnWindows -Path $meta2 -Message "Expected metadata directory to be hidden on Windows."
   Assert-HiddenOnWindows -Path (Join-Path $case2 ".vscode") -Message "Expected .vscode directory to be hidden on Windows."
   Assert-True (Test-Path -LiteralPath $defaults2 -PathType Leaf) "Wizard defaults file not found."
@@ -413,6 +435,14 @@ try {
   $workspace2Obj = Get-Content -LiteralPath $ws2 -Raw | ConvertFrom-Json
   Assert-True ($workspace2Obj.settings.'chatgpt.openOnStartup' -eq $true) "Expected chatgpt.openOnStartup=true in workspace settings."
   Assert-True ($workspace2Obj.settings.'chatgpt.runCodexInWindowsSubsystemForLinux' -eq $false) "Expected runCodexInWsl=false in workspace settings."
+
+  $rollback2Obj = Get-Content -LiteralPath $rollbackManifest2 -Raw | ConvertFrom-Json
+  Assert-True ($rollback2Obj.schemaVersion -eq 1) "Rollback manifest schemaVersion mismatch."
+  Assert-True ($rollback2Obj.launchMode -eq "workspace") "Rollback manifest should record workspace launch mode."
+  Assert-True ($rollback2Obj.trackSessionHistory -eq $false) "Rollback manifest should record disabled session-history tracking by default."
+  Assert-True ($rollback2Obj.managedFiles.launcher.projectRelativePath -eq "vsc_launcher.bat") "Rollback manifest should record generated launcher path."
+  Assert-True ($rollback2Obj.managedFiles.vscodeSettings.projectRelativePath -eq ".vscode/settings.json") "Rollback manifest should record VS Code settings ownership."
+  Assert-True ($rollback2Obj.managedFiles.gitignore.projectRelativePath -eq ".gitignore") "Rollback manifest should record gitignore ownership when applicable."
 
   Write-Host "[test] Case 2.0: WSL UNC target fallback when WSL is unavailable"
   $case20 = Join-Path $tmpRoot "case20-no-wsl-unc-fallback"
@@ -528,12 +558,67 @@ try {
   Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case24 -Responses @("y") -DebugMode -UseTargetFlag
 
   $case24GitignoreText = Get-Content -LiteralPath $case24Gitignore -Raw
+  $case24RollbackManifest = Get-Content -LiteralPath (Join-Path $case24 ".vsc_launcher\rollback.manifest.json") -Raw | ConvertFrom-Json
   Assert-Contains $case24GitignoreText ".codex/*" "Case 2.4 should ignore unmanaged .codex entries by wildcard."
   Assert-Contains $case24GitignoreText "!.codex/config.toml" "Case 2.4 should keep config.toml trackable."
   Assert-Contains $case24GitignoreText "!.codex/sessions/" "Case 2.4 should keep sessions trackable when session history tracking is enabled."
   Assert-Contains $case24GitignoreText "!.codex/archived_sessions/" "Case 2.4 should keep archived sessions trackable when session history tracking is enabled."
   Assert-Contains $case24GitignoreText "!.codex/memories/" "Case 2.4 should keep memories trackable when session history tracking is enabled."
   Assert-Contains $case24GitignoreText "!.codex/session_index.jsonl" "Case 2.4 should keep session index trackable when session history tracking is enabled."
+  Assert-True ($case24RollbackManifest.trackSessionHistory -eq $true) "Case 2.4 rollback manifest should record enabled session-history tracking."
+
+  Write-Host "[test] Case 2.5: rollback removes launcher-owned artifacts and preserves user edits"
+  $case25 = Join-Path $tmpRoot "case25-rollback-local"
+  New-Item -ItemType Directory -Force -Path $case25 | Out-Null
+  $case25Workspace = Join-Path $case25 "rollback.code-workspace"
+  Set-Content -LiteralPath $case25Workspace -Value '{"folders":[{"path":"."}]}' -NoNewline
+  $case25Gitignore = Join-Path $case25 ".gitignore"
+  Set-Content -LiteralPath $case25Gitignore -Value "# rollback keep`r`n" -NoNewline
+
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case25 -Responses @("n") -DebugMode -UseTargetFlag
+
+  $case25SettingsPath = Join-Path $case25 ".vscode\settings.json"
+  $case25SettingsObj = Get-Content -LiteralPath $case25SettingsPath -Raw | ConvertFrom-Json
+  $case25SettingsObj | Add-Member -NotePropertyName "custom.keep" -NotePropertyValue $true -Force
+  Set-Content -LiteralPath $case25SettingsPath -Value ($case25SettingsObj | ConvertTo-Json -Depth 20)
+
+  $case25WorkspaceObj = Get-Content -LiteralPath $case25Workspace -Raw | ConvertFrom-Json
+  if ($null -eq $case25WorkspaceObj.settings) {
+    $case25WorkspaceObj | Add-Member -NotePropertyName "settings" -NotePropertyValue ([ordered]@{}) -Force
+  }
+  $case25WorkspaceObj.settings | Add-Member -NotePropertyName "custom.workspaceKeep" -NotePropertyValue $true -Force
+  Set-Content -LiteralPath $case25Workspace -Value ($case25WorkspaceObj | ConvertTo-Json -Depth 20)
+
+  Add-Content -LiteralPath $case25Gitignore -Value "keep-after-setup"
+
+  $case25Rollback = Invoke-Rollback -RepoRoot $repoRoot -TargetPath $case25
+  Assert-True ($case25Rollback.ExitCode -eq 0) ("Case 2.5 rollback failed. Output: " + $case25Rollback.Output)
+  Assert-Contains $case25Rollback.Output "Rollback completed successfully." "Case 2.5 rollback should report success."
+
+  Assert-True (-not (Test-Path -LiteralPath (Join-Path $case25 "vsc_launcher.bat") -PathType Leaf)) "Case 2.5 rollback should remove generated launcher."
+  Assert-True (-not (Test-Path -LiteralPath (Join-Path $case25 ".vsc_launcher") -PathType Any)) "Case 2.5 rollback should remove metadata directory created by setup."
+
+  $case25SettingsText = Get-Content -LiteralPath $case25SettingsPath -Raw
+  Assert-Contains $case25SettingsText '"custom.keep"' "Case 2.5 rollback should preserve user-added VS Code settings."
+  Assert-NotContains $case25SettingsText "chatgpt.openOnStartup" "Case 2.5 rollback should remove wizard-managed VS Code settings."
+  Assert-NotContains $case25SettingsText "chatgpt.runCodexInWindowsSubsystemForLinux" "Case 2.5 rollback should remove wizard-managed WSL setting."
+
+  $case25WorkspaceText = Get-Content -LiteralPath $case25Workspace -Raw
+  Assert-Contains $case25WorkspaceText '"custom.workspaceKeep"' "Case 2.5 rollback should preserve user-added workspace settings."
+  Assert-NotContains $case25WorkspaceText "chatgpt.openOnStartup" "Case 2.5 rollback should remove wizard-managed workspace settings."
+  Assert-NotContains $case25WorkspaceText "chatgpt.runCodexInWindowsSubsystemForLinux" "Case 2.5 rollback should remove wizard-managed workspace WSL setting."
+
+  $case25GitignoreTextAfter = Get-Content -LiteralPath $case25Gitignore -Raw
+  Assert-Contains $case25GitignoreTextAfter "keep-after-setup" "Case 2.5 rollback should preserve user-added gitignore content."
+  Assert-NotContains $case25GitignoreTextAfter "# >>> codex-session-isolator >>>" "Case 2.5 rollback should remove managed gitignore block."
+
+  Write-Host "[test] Case 2.6: rollback without manifest fails safely"
+  $case26 = Join-Path $tmpRoot "case26-rollback-no-manifest"
+  New-Item -ItemType Directory -Force -Path $case26 | Out-Null
+
+  $case26Rollback = Invoke-Rollback -RepoRoot $repoRoot -TargetPath $case26
+  Assert-True ($case26Rollback.ExitCode -ne 0) "Case 2.6 rollback should fail when no manifest exists."
+  Assert-Contains $case26Rollback.Output "No launcher-managed rollback metadata found" "Case 2.6 missing-manifest message mismatch."
 
   Write-Host "[test] Case 2.1: wizard creates safety backups before overwriting files"
   Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("n") -DebugMode -UseTargetFlag
