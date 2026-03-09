@@ -52,6 +52,10 @@ assert_exit_code() {
   fi
 }
 
+create_temp_output_file() {
+  mktemp "$tmp_dir/csi-output.XXXXXX"
+}
+
 is_wsl_runtime() {
   [[ -n "${WSL_DISTRO_NAME:-}" && -n "${WSL_INTEROP:-}" ]]
 }
@@ -189,10 +193,11 @@ echo "[test] Wizard helper usage output"
 assert_contains "$wrapper_output" "Usage:" "Wizard helper usage output mismatch."
 
 echo "[test] Generate project launcher"
-wizard_input_no_track | "$WIZARD_HELPER" "$project_dir" >/tmp/csi-linux-wizard.out 2>&1
-wizard_output="$(cat /tmp/csi-linux-wizard.out)"
+wizard_output_file="$(create_temp_output_file)"
+wizard_input_no_track | "$WIZARD_HELPER" "$project_dir" >"$wizard_output_file" 2>&1
+wizard_output="$(cat "$wizard_output_file")"
 assert_contains "$wizard_output" "Launcher generated successfully." "Wizard did not report successful generation."
-rm -f /tmp/csi-linux-wizard.out
+rm -f "$wizard_output_file"
 
 generated_launcher="$project_dir/vsc_launcher.sh"
 generated_config="$project_dir/.vsc_launcher/config.env"
@@ -231,10 +236,11 @@ else
   printf '{}' > "$workspace_track"
   printf '# existing ignore rules\n' > "$project_dir_track/.gitignore"
 
-  wizard_input_track_history | "$WIZARD_HELPER" "$project_dir_track" >/tmp/csi-linux-wizard-track.out 2>&1
-  wizard_track_output="$(cat /tmp/csi-linux-wizard-track.out)"
+  wizard_track_output_file="$(create_temp_output_file)"
+  wizard_input_track_history | "$WIZARD_HELPER" "$project_dir_track" >"$wizard_track_output_file" 2>&1
+  wizard_track_output="$(cat "$wizard_track_output_file")"
   assert_contains "$wizard_track_output" "Launcher generated successfully." "Wizard did not report successful tracked-history generation."
-  rm -f /tmp/csi-linux-wizard-track.out
+  rm -f "$wizard_track_output_file"
 
   manifest_track_text="$(cat "$project_dir_track/.vsc_launcher/rollback.manifest.json")"
   assert_contains "$manifest_track_text" '"trackSessionHistory": true' "Tracked-history rollback manifest should record enabled session-history tracking."
@@ -294,10 +300,11 @@ mkdir -p "$rollback_project"
 printf '{}' > "$rollback_project/sample.code-workspace"
 printf '# rollback keep\n' > "$rollback_project/.gitignore"
 
-wizard_input_no_track | "$WIZARD_HELPER" "$rollback_project" >/tmp/csi-linux-rollback-setup.out 2>&1
-rollback_setup_output="$(cat /tmp/csi-linux-rollback-setup.out)"
+rollback_setup_output_file="$(create_temp_output_file)"
+wizard_input_no_track | "$WIZARD_HELPER" "$rollback_project" >"$rollback_setup_output_file" 2>&1
+rollback_setup_output="$(cat "$rollback_setup_output_file")"
 assert_contains "$rollback_setup_output" "Launcher generated successfully." "Rollback setup precondition did not complete successfully."
-rm -f /tmp/csi-linux-rollback-setup.out
+rm -f "$rollback_setup_output_file"
 
 if is_wsl_runtime; then
   echo "[test] Rollback stop mode on WSL should fail before editing managed files"
@@ -306,10 +313,11 @@ if is_wsl_runtime; then
   printf '{}' > "$rollback_stop_project/sample.code-workspace"
   printf '# rollback stop keep\n' > "$rollback_stop_project/.gitignore"
 
-  wizard_input_no_track | "$WIZARD_HELPER" "$rollback_stop_project" >/tmp/csi-linux-rollback-stop-setup.out 2>&1
-  rollback_stop_setup_output="$(cat /tmp/csi-linux-rollback-stop-setup.out)"
+  rollback_stop_setup_output_file="$(create_temp_output_file)"
+  wizard_input_no_track | "$WIZARD_HELPER" "$rollback_stop_project" >"$rollback_stop_setup_output_file" 2>&1
+  rollback_stop_setup_output="$(cat "$rollback_stop_setup_output_file")"
   assert_contains "$rollback_stop_setup_output" "Launcher generated successfully." "Rollback stop-mode setup precondition did not complete successfully."
-  rm -f /tmp/csi-linux-rollback-stop-setup.out
+  rm -f "$rollback_stop_setup_output_file"
 
   rollback_stop_gitignore_before="$(cat "$rollback_stop_project/.gitignore")"
 
@@ -355,24 +363,26 @@ EOF
 cp "$rollback_format_project/sample.code-workspace" "$tmp_dir/sample.code-workspace.before"
 cp "$rollback_format_project/.gitignore" "$tmp_dir/gitignore.before"
 
-wizard_input_no_track | "$WIZARD_HELPER" "$rollback_format_project" >/tmp/csi-linux-rollback-format-setup.out 2>&1
-rollback_format_setup_output="$(cat /tmp/csi-linux-rollback-format-setup.out)"
+rollback_format_setup_output_file="$(create_temp_output_file)"
+wizard_input_no_track | "$WIZARD_HELPER" "$rollback_format_project" >"$rollback_format_setup_output_file" 2>&1
+rollback_format_setup_output="$(cat "$rollback_format_setup_output_file")"
 assert_contains "$rollback_format_setup_output" "Launcher generated successfully." "Rollback formatting setup precondition did not complete successfully."
-rm -f /tmp/csi-linux-rollback-format-setup.out
+rm -f "$rollback_format_setup_output_file"
 
+rollback_format_output_file="$(create_temp_output_file)"
 if is_wsl_runtime; then
   set +e
   rollback_format_output="$(invoke_batch_wizard_with_input $'2\r\n' --rollback "$rollback_format_project")"
   rollback_format_exit=$?
   set -e
-  printf '%s' "$rollback_format_output" >/tmp/csi-linux-rollback-format.out
+  printf '%s' "$rollback_format_output" >"$rollback_format_output_file"
   assert_exit_code "$rollback_format_exit" 0 "Rollback formatting case on WSL should succeed."
 else
-  "$WIZARD_HELPER" --rollback "$rollback_format_project" >/tmp/csi-linux-rollback-format.out 2>&1
+  "$WIZARD_HELPER" --rollback "$rollback_format_project" >"$rollback_format_output_file" 2>&1
 fi
-rollback_format_output="$(cat /tmp/csi-linux-rollback-format.out)"
+rollback_format_output="$(cat "$rollback_format_output_file")"
 assert_contains "$rollback_format_output" "Rollback completed successfully." "Rollback formatting case did not report successful completion."
-rm -f /tmp/csi-linux-rollback-format.out
+rm -f "$rollback_format_output_file"
 
 cmp -s "$tmp_dir/sample.code-workspace.before" "$rollback_format_project/sample.code-workspace" || {
   echo "Assertion failed: rollback should restore workspace file formatting and line endings exactly when no user edits were made."
@@ -389,10 +399,11 @@ mkdir -p "$rollback_codex_project"
 printf '{}' > "$rollback_codex_project/sample.code-workspace"
 printf '# rollback codex keep\n' > "$rollback_codex_project/.gitignore"
 
-wizard_input_no_track | "$WIZARD_HELPER" "$rollback_codex_project" >/tmp/csi-linux-rollback-codex-setup.out 2>&1
-rollback_codex_setup_output="$(cat /tmp/csi-linux-rollback-codex-setup.out)"
+rollback_codex_setup_output_file="$(create_temp_output_file)"
+wizard_input_no_track | "$WIZARD_HELPER" "$rollback_codex_project" >"$rollback_codex_setup_output_file" 2>&1
+rollback_codex_setup_output="$(cat "$rollback_codex_setup_output_file")"
 assert_contains "$rollback_codex_setup_output" "Launcher generated successfully." "Rollback codex-cleanup setup precondition did not complete successfully."
-rm -f /tmp/csi-linux-rollback-codex-setup.out
+rm -f "$rollback_codex_setup_output_file"
 
 mkdir -p "$rollback_codex_project/.codex/sessions" "$rollback_codex_project/.codex/memories" "$rollback_codex_project/.codex/skills/local"
 printf 'model = "gpt-5"\n' > "$rollback_codex_project/.codex/config.toml"
@@ -401,19 +412,20 @@ printf 'remember this\n' > "$rollback_codex_project/.codex/memories/note.md"
 printf 'skill body\n' > "$rollback_codex_project/.codex/skills/local/SKILL.md"
 printf 'db-bytes\n' > "$rollback_codex_project/.codex/state_5.sqlite"
 
+rollback_codex_output_file="$(create_temp_output_file)"
 if is_wsl_runtime; then
   set +e
   rollback_codex_output="$(invoke_batch_wizard_with_input $'2\r\n' --rollback --rollback-codex-runtime-data "$rollback_codex_project")"
   rollback_codex_exit=$?
   set -e
-  printf '%s' "$rollback_codex_output" >/tmp/csi-linux-rollback-codex.out
+  printf '%s' "$rollback_codex_output" >"$rollback_codex_output_file"
   assert_exit_code "$rollback_codex_exit" 0 "Rollback codex-cleanup case on WSL should succeed."
 else
-  "$WIZARD_HELPER" --rollback --rollback-codex-runtime-data "$rollback_codex_project" >/tmp/csi-linux-rollback-codex.out 2>&1
+  "$WIZARD_HELPER" --rollback --rollback-codex-runtime-data "$rollback_codex_project" >"$rollback_codex_output_file" 2>&1
 fi
-rollback_codex_output="$(cat /tmp/csi-linux-rollback-codex.out)"
+rollback_codex_output="$(cat "$rollback_codex_output_file")"
 assert_contains "$rollback_codex_output" "Rollback completed successfully." "Rollback codex-cleanup case did not report successful completion."
-rm -f /tmp/csi-linux-rollback-codex.out
+rm -f "$rollback_codex_output_file"
 
 assert_file_exists "$rollback_codex_project/.codex/config.toml" "Rollback codex-cleanup should preserve config.toml."
 assert_file_missing "$rollback_codex_project/.codex/sessions" "Rollback codex-cleanup should remove sessions."
@@ -439,19 +451,20 @@ with open(workspace_path, "w", encoding="utf-8") as fh:
 PY
 printf 'keep-after-setup\n' >> "$rollback_project/.gitignore"
 
+rollback_output_file="$(create_temp_output_file)"
 if is_wsl_runtime; then
   set +e
   rollback_output="$(invoke_batch_wizard_with_input $'2\r\n' --rollback "$rollback_project")"
   rollback_exit=$?
   set -e
-  printf '%s' "$rollback_output" >/tmp/csi-linux-rollback.out
+  printf '%s' "$rollback_output" >"$rollback_output_file"
   assert_exit_code "$rollback_exit" 0 "Rollback batch invocation on WSL should succeed."
 else
-  "$WIZARD_HELPER" --rollback "$rollback_project" >/tmp/csi-linux-rollback.out 2>&1
+  "$WIZARD_HELPER" --rollback "$rollback_project" >"$rollback_output_file" 2>&1
 fi
-rollback_output="$(cat /tmp/csi-linux-rollback.out)"
+rollback_output="$(cat "$rollback_output_file")"
 assert_contains "$rollback_output" "Rollback completed successfully." "Rollback did not report successful completion."
-rm -f /tmp/csi-linux-rollback.out
+rm -f "$rollback_output_file"
 
 assert_file_missing "$rollback_project/vsc_launcher.sh" "Rollback should remove the generated Unix launcher."
 assert_file_missing "$rollback_project/.vsc_launcher" "Rollback should remove the metadata directory when it was created by setup."

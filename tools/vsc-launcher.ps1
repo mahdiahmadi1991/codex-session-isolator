@@ -89,6 +89,11 @@ if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
     & $wizardPath
   }
 }
+
+if ($null -ne $LASTEXITCODE) {
+  exit $LASTEXITCODE
+}
+
 exit 0
 
 
