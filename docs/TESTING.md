@@ -2,6 +2,17 @@
 
 Run tests manually in your own environment.
 
+Validated platforms today:
+
+- Windows: covered by CI and the PowerShell integration suite.
+- Linux: covered by CI and `tests/test-linux.sh`.
+- macOS: covered by CI using the Unix integration suite.
+- WSL-backed project targets: manually validated during setup and rollback work.
+
+Out-of-scope disclaimer:
+
+- Any platform, shell, VS Code channel, or WSL combination not listed above should be treated as best-effort until it is added to this matrix and revalidated.
+
 Automated CI coverage:
 
 - Windows: `tests/Test-Windows.ps1`

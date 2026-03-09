@@ -5,6 +5,7 @@
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
 [![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC?logo=visualstudiocode)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
 
 Codex Session Isolator gives each code environment its own Codex session state.
@@ -41,6 +42,12 @@ Practical effect:
 - Keeps per-project Codex state isolated.
 - Supports both workspace files and plain folders (no workspace required).
 - Includes an interactive launcher wizard for generating project-specific launchers.
+
+## Validation Status
+
+- Tested in automated CI on Windows, Linux, and macOS.
+- Manually validated on WSL-backed project targets during launcher and rollback development.
+- Any platform or VS Code/WSL combination not covered by the current CI matrix or manual validation should be treated as best-effort until explicitly verified in a future release.
 
 ## Project Structure
 

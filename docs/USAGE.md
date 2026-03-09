@@ -19,6 +19,11 @@ Launch target rules (VS Code open target):
 
 Outside this launcher, your default Codex behavior remains unchanged.
 
+Validation note:
+
+- The launcher/helper flows are currently validated by CI on Windows, Linux, and macOS, with additional manual validation on WSL-backed targets.
+- Any other environment combination should be considered best-effort until it is explicitly added to the validation matrix.
+
 Session visibility and credentials:
 
 - Launcher sessions read/write state from project-local `.codex`.
