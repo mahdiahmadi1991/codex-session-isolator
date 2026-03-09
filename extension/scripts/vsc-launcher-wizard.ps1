@@ -1084,7 +1084,7 @@ function Set-CodeWorkspaceChatGptSettings {
 function Update-GitIgnoreBlock {
   param(
     [string]$RootPath,
-    [bool]$IgnoreSessions,
+    [bool]$TrackSessionHistory,
     [string]$MetadataDirName,
     [string[]]$AdditionalGeneratedFiles = @()
   )
@@ -1115,17 +1115,20 @@ function Update-GitIgnoreBlock {
     "$MetadataDirName/"
   )
 
-  if ($IgnoreSessions) {
+  $blockLines += @(
+    ".codex/*"
+    "!.codex/config.toml"
+  )
+
+  if ($TrackSessionHistory) {
     $blockLines += @(
-      ".codex/"
-    )
-  } else {
-    $blockLines += @(
-      ".codex/*"
       "!.codex/sessions/"
       "!.codex/sessions/**"
       "!.codex/archived_sessions/"
       "!.codex/archived_sessions/**"
+      "!.codex/memories/"
+      "!.codex/memories/**"
+      "!.codex/session_index.jsonl"
     )
   }
 
@@ -1183,7 +1186,7 @@ function Get-WizardDefaults {
   $values = [ordered]@{
     useRemoteWsl = $null
     codexRunInWsl = $null
-    ignoreSessions = $null
+    trackSessionHistory = $null
     windowsShortcutEnabled = $null
     windowsShortcutLocation = $null
     windowsShortcutCustomPath = $null
@@ -1192,12 +1195,18 @@ function Get-WizardDefaults {
   if (Test-Path -LiteralPath $defaultsPath -PathType Leaf) {
     try {
       $obj = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
-      foreach ($key in @("useRemoteWsl", "codexRunInWsl", "ignoreSessions", "windowsShortcutEnabled")) {
+      foreach ($key in @("useRemoteWsl", "codexRunInWsl", "trackSessionHistory", "windowsShortcutEnabled")) {
         if ($obj.PSObject.Properties.Name -contains $key) {
           $raw = $obj.$key
           if ($raw -is [bool]) {
             $values[$key] = $raw
           }
+        }
+      }
+      if ($null -eq $values.trackSessionHistory -and $obj.PSObject.Properties.Name -contains "ignoreSessions") {
+        $rawIgnore = $obj.ignoreSessions
+        if ($rawIgnore -is [bool]) {
+          $values.trackSessionHistory = (-not [bool]$rawIgnore)
         }
       }
       if ($obj.PSObject.Properties.Name -contains "windowsShortcutLocation") {
@@ -1229,7 +1238,7 @@ function Save-WizardDefaults {
     [string]$MetadataDirName,
     [Nullable[bool]]$UseRemoteWsl = $null,
     [Nullable[bool]]$CodexRunInWsl = $null,
-    [bool]$IgnoreSessions,
+    [bool]$TrackSessionHistory,
     [Nullable[bool]]$WindowsShortcutEnabled = $null,
     [string]$WindowsShortcutLocation = "",
     [string]$WindowsShortcutCustomPath = ""
@@ -1244,7 +1253,7 @@ function Save-WizardDefaults {
   $payload = [ordered]@{
     useRemoteWsl = if ($null -ne $UseRemoteWsl) { [bool]$UseRemoteWsl } else { $null }
     codexRunInWsl = if ($null -ne $CodexRunInWsl) { [bool]$CodexRunInWsl } else { $null }
-    ignoreSessions = $IgnoreSessions
+    trackSessionHistory = $TrackSessionHistory
     windowsShortcutEnabled = if ($null -ne $WindowsShortcutEnabled) { [bool]$WindowsShortcutEnabled } else { $null }
     windowsShortcutLocation = if ([string]::IsNullOrWhiteSpace($WindowsShortcutLocation)) { $null } else { $WindowsShortcutLocation }
     windowsShortcutCustomPath = if ([string]::IsNullOrWhiteSpace($WindowsShortcutCustomPath)) { $null } else { $WindowsShortcutCustomPath }
@@ -2126,8 +2135,8 @@ if ($shouldGenerateWindowsWslShortcut) {
   Write-Info "Target detected in WSL filesystem."
 }
 Write-Info ("Wizard log: {0}" -f $script:WizardLogPath)
-if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRunInWsl -or $null -ne $wizardDefaults.ignoreSessions -or $null -ne $wizardDefaults.windowsShortcutEnabled -or $null -ne $wizardDefaults.windowsShortcutLocation) {
-  Write-Info ("Loaded defaults: remoteWsl={0}, codexInWsl={1}, ignoreSessions={2}, windowsShortcutEnabled={3}, windowsShortcutLocation={4}" -f $wizardDefaults.useRemoteWsl, $wizardDefaults.codexRunInWsl, $wizardDefaults.ignoreSessions, $wizardDefaults.windowsShortcutEnabled, $wizardDefaults.windowsShortcutLocation)
+if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRunInWsl -or $null -ne $wizardDefaults.trackSessionHistory -or $null -ne $wizardDefaults.windowsShortcutEnabled -or $null -ne $wizardDefaults.windowsShortcutLocation) {
+  Write-Info ("Loaded defaults: remoteWsl={0}, codexInWsl={1}, trackSessionHistory={2}, windowsShortcutEnabled={3}, windowsShortcutLocation={4}" -f $wizardDefaults.useRemoteWsl, $wizardDefaults.codexRunInWsl, $wizardDefaults.trackSessionHistory, $wizardDefaults.windowsShortcutEnabled, $wizardDefaults.windowsShortcutLocation)
 }
 
 $launchMode = "folder"
@@ -2329,8 +2338,9 @@ if ($shouldGenerateWindowsWslShortcut) {
   }
 }
 
-$ignoreDefault = if ($null -ne $wizardDefaults.ignoreSessions) { [bool]$wizardDefaults.ignoreSessions } else { $false }
-$ignoreSessions = Read-YesNo -Prompt "Ignore Codex chat sessions in gitignore?" -DefaultValue $ignoreDefault
+$trackHistoryDefault = if ($null -ne $wizardDefaults.trackSessionHistory) { [bool]$wizardDefaults.trackSessionHistory } else { $false }
+$trackSessionHistory = Read-YesNo -Prompt "Track Codex session history in git?" -DefaultValue $trackHistoryDefault
+Write-Info ("Codex session history git tracking: {0}" -f ($(if ($trackSessionHistory) { "enabled" } else { "disabled" })))
 Write-Info ("Launcher logging default: {0}" -f ($(if ($enableLoggingByDefault) { "enabled (debug mode)" } else { "disabled" })))
 
 $settingsWrite = Set-VscodeChatGptSettings -RootPath $targetRoot -RunCodexInWsl $codexRunInWsl -MetadataDirName $metadataDirName
@@ -2361,7 +2371,7 @@ Save-WizardDefaults `
   -MetadataDirName $metadataDirName `
   -UseRemoteWsl $useRemoteWslForDefaults `
   -CodexRunInWsl $codexRunInWslForDefaults `
-  -IgnoreSessions $ignoreSessions `
+  -TrackSessionHistory $trackSessionHistory `
   -WindowsShortcutEnabled $windowsShortcutEnabledForDefaults `
   -WindowsShortcutLocation $windowsShortcutLocationForDefaults `
   -WindowsShortcutCustomPath $windowsShortcutCustomPathForDefaults
@@ -2378,7 +2388,7 @@ if ($createWindowsShortcut -and $shortcutLivesInProjectRoot) {
 
 $gitignoreUpdated = Update-GitIgnoreBlock `
   -RootPath $targetRoot `
-  -IgnoreSessions $ignoreSessions `
+  -TrackSessionHistory $trackSessionHistory `
   -MetadataDirName $metadataDirName `
   -AdditionalGeneratedFiles $additionalGeneratedFiles
 if ($gitignoreUpdated) {

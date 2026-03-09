@@ -41,6 +41,28 @@ assert_exit_code() {
   fi
 }
 
+is_wsl_runtime() {
+  [[ -n "${WSL_DISTRO_NAME:-}" && -n "${WSL_INTEROP:-}" ]]
+}
+
+wizard_input_no_track() {
+  if is_wsl_runtime; then
+    printf 'n\nn\nn\n'
+    return
+  fi
+
+  printf 'n\n'
+}
+
+wizard_input_track_history() {
+  if is_wsl_runtime; then
+    printf 'y\ny\nn\ny\n'
+    return
+  fi
+
+  printf 'y\n'
+}
+
 echo "[test] Bash syntax check"
 bash -n "$WIZARD_HELPER"
 chmod +x "$WIZARD_HELPER"
@@ -70,12 +92,13 @@ project_dir="$tmp_dir/project"
 mkdir -p "$project_dir"
 workspace="$project_dir/sample.code-workspace"
 printf '{}' > "$workspace"
+printf '# existing ignore rules\n' > "$project_dir/.gitignore"
 
 echo "[test] Wizard helper usage output"
 assert_contains "$wrapper_output" "Usage:" "Wizard helper usage output mismatch."
 
 echo "[test] Generate project launcher"
-printf 'n\n' | "$WIZARD_HELPER" "$project_dir" >/tmp/csi-linux-wizard.out 2>&1
+wizard_input_no_track | "$WIZARD_HELPER" "$project_dir" >/tmp/csi-linux-wizard.out 2>&1
 wizard_output="$(cat /tmp/csi-linux-wizard.out)"
 assert_contains "$wizard_output" "Launcher generated successfully." "Wizard did not report successful generation."
 rm -f /tmp/csi-linux-wizard.out
@@ -83,10 +106,42 @@ rm -f /tmp/csi-linux-wizard.out
 generated_launcher="$project_dir/vsc_launcher.sh"
 generated_config="$project_dir/.vsc_launcher/config.env"
 generated_settings="$project_dir/.vscode/settings.json"
+generated_gitignore="$project_dir/.gitignore"
 
 assert_file_exists "$generated_launcher" "Generated Unix launcher was not created."
 assert_file_exists "$generated_config" "Generated launcher config was not created."
 assert_file_exists "$generated_settings" "Generated VS Code settings were not created."
+assert_file_exists "$generated_gitignore" "Generated gitignore was not preserved."
+
+gitignore_text="$(cat "$generated_gitignore")"
+assert_contains "$gitignore_text" ".codex/*" "Generated gitignore should ignore unmanaged .codex entries by wildcard."
+assert_contains "$gitignore_text" "!.codex/config.toml" "Generated gitignore should keep config.toml trackable."
+if [[ "$gitignore_text" == *"!.codex/sessions/"* ]]; then
+  echo "Assertion failed: session history should remain ignored by default."
+  exit 1
+fi
+
+echo "[test] Generate launcher with session history tracking enabled"
+if is_wsl_runtime; then
+  echo "[test] Skip tracked-history integration on WSL: Windows PowerShell Read-Host over pipes is not reliable for non-default answers."
+else
+  project_dir_track="$tmp_dir/project-track"
+  mkdir -p "$project_dir_track"
+  workspace_track="$project_dir_track/sample.code-workspace"
+  printf '{}' > "$workspace_track"
+  printf '# existing ignore rules\n' > "$project_dir_track/.gitignore"
+
+  wizard_input_track_history | "$WIZARD_HELPER" "$project_dir_track" >/tmp/csi-linux-wizard-track.out 2>&1
+  wizard_track_output="$(cat /tmp/csi-linux-wizard-track.out)"
+  assert_contains "$wizard_track_output" "Launcher generated successfully." "Wizard did not report successful tracked-history generation."
+  rm -f /tmp/csi-linux-wizard-track.out
+
+  gitignore_track_text="$(cat "$project_dir_track/.gitignore")"
+  assert_contains "$gitignore_track_text" "!.codex/sessions/" "Tracked-history gitignore should keep sessions trackable."
+  assert_contains "$gitignore_track_text" "!.codex/archived_sessions/" "Tracked-history gitignore should keep archived sessions trackable."
+  assert_contains "$gitignore_track_text" "!.codex/memories/" "Tracked-history gitignore should keep memories trackable."
+  assert_contains "$gitignore_track_text" "!.codex/session_index.jsonl" "Tracked-history gitignore should keep session index trackable."
+fi
 
 echo "[test] Generated launcher syntax check"
 bash -n "$generated_launcher"

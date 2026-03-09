@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Wizard-managed `.gitignore` rules now always keep `.codex/config.toml` trackable, and the opt-in git-tracked history mode now also keeps `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` trackable.
+
 ## [0.3.10] - 2026-03-02
 
 ### Added

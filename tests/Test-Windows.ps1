@@ -344,7 +344,7 @@ try {
   $case01 = Join-Path $tmpRoot "case01-bundled-wizard"
   New-Item -ItemType Directory -Force -Path $case01 | Out-Null
   Set-Content -LiteralPath (Join-Path $case01 "bundled.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
-  Invoke-WizardScriptDirect -RepoRoot $repoRoot -ScriptPath $bundledWizardPath -TargetPath $case01 -Responses @("y")
+  Invoke-WizardScriptDirect -RepoRoot $repoRoot -ScriptPath $bundledWizardPath -TargetPath $case01 -Responses @("n")
   Assert-HiddenOnWindows -Path (Join-Path $case01 ".vsc_launcher") -Message "Expected .vsc_launcher to be hidden on Windows."
   Assert-HiddenOnWindows -Path (Join-Path $case01 ".vscode") -Message "Expected .vscode to be hidden on Windows."
 
@@ -381,7 +381,7 @@ try {
   Set-Content -LiteralPath $ws2 -Value '{"folders":[{"path":"."}]}' -NoNewline
   Set-Content -LiteralPath $gitignore2 -Value "# existing ignore rules`r`n" -NoNewline
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("n") -DebugMode -UseTargetFlag
 
   $launcher2 = Join-Path $case2 "vsc_launcher.bat"
   $wslBridge2 = @(Get-ChildItem -LiteralPath $case2 -Filter "Open *.lnk" -File -ErrorAction SilentlyContinue)
@@ -474,7 +474,7 @@ try {
   $case22 = Join-Path $tmpRoot "case22-create-workspace"
   New-Item -ItemType Directory -Force -Path $case22 | Out-Null
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case22 -Responses @("y") -DebugMode -UseTargetFlag
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case22 -Responses @("n") -DebugMode -UseTargetFlag
 
   $case22Name = Split-Path -Leaf $case22
   $case22Workspace = Join-Path $case22 ("{0}.code-workspace" -f $case22Name)
@@ -497,13 +497,20 @@ try {
   Assert-Contains $gitignoreText2 "# >>> codex-session-isolator >>>" "Managed gitignore block start missing."
   Assert-Contains $gitignoreText2 "vsc_launcher.*" "Expected launcher ignore entry missing."
   Assert-Contains $gitignoreText2 ".vsc_launcher/" "Expected metadata folder ignore entry missing."
+  Assert-Contains $gitignoreText2 ".codex/*" "Expected .codex wildcard ignore entry missing when session history is not tracked."
+  Assert-Contains $gitignoreText2 "!.codex/config.toml" "config.toml should remain trackable when session history is not tracked."
+  Assert-NotContains $gitignoreText2 "!.codex/sessions/" "Session history should remain ignored by default."
+  Assert-NotContains $gitignoreText2 "!.codex/archived_sessions/" "Archived sessions should remain ignored by default."
+  Assert-NotContains $gitignoreText2 "!.codex/memories/" "Memories should remain ignored by default."
+  Assert-NotContains $gitignoreText2 "!.codex/session_index.jsonl" "Session index should remain ignored by default."
+  Assert-NotContains $gitignoreText2 ".codex/" "Whole .codex directory should not be ignored when config.toml must stay trackable."
 
   Write-Host "[test] Case 2.3: wizard does not create .gitignore when file is absent"
   $case23 = Join-Path $tmpRoot "case23-no-gitignore"
   New-Item -ItemType Directory -Force -Path $case23 | Out-Null
   Set-Content -LiteralPath (Join-Path $case23 "app.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case23 -Responses @("y") -DebugMode -UseTargetFlag
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case23 -Responses @("n") -DebugMode -UseTargetFlag
 
   $case23GitignorePath = Join-Path $case23 ".gitignore"
   Assert-True (-not (Test-Path -LiteralPath $case23GitignorePath -PathType Leaf)) "Case 2.3 should not create .gitignore when absent."
@@ -511,8 +518,25 @@ try {
   $case23WizardLog = Get-Content -LiteralPath $case23WizardLogPath -Raw
   Assert-Contains $case23WizardLog "No .gitignore found in target root. Skipping .gitignore update." "Case 2.3 wizard log should report skipped .gitignore update."
 
+  Write-Host "[test] Case 2.4: session history tracking keeps config and selected history paths trackable"
+  $case24 = Join-Path $tmpRoot "case24-track-session-history"
+  New-Item -ItemType Directory -Force -Path $case24 | Out-Null
+  Set-Content -LiteralPath (Join-Path $case24 "keep.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
+  $case24Gitignore = Join-Path $case24 ".gitignore"
+  Set-Content -LiteralPath $case24Gitignore -Value "# keep sessions`r`n" -NoNewline
+
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case24 -Responses @("y") -DebugMode -UseTargetFlag
+
+  $case24GitignoreText = Get-Content -LiteralPath $case24Gitignore -Raw
+  Assert-Contains $case24GitignoreText ".codex/*" "Case 2.4 should ignore unmanaged .codex entries by wildcard."
+  Assert-Contains $case24GitignoreText "!.codex/config.toml" "Case 2.4 should keep config.toml trackable."
+  Assert-Contains $case24GitignoreText "!.codex/sessions/" "Case 2.4 should keep sessions trackable when session history tracking is enabled."
+  Assert-Contains $case24GitignoreText "!.codex/archived_sessions/" "Case 2.4 should keep archived sessions trackable when session history tracking is enabled."
+  Assert-Contains $case24GitignoreText "!.codex/memories/" "Case 2.4 should keep memories trackable when session history tracking is enabled."
+  Assert-Contains $case24GitignoreText "!.codex/session_index.jsonl" "Case 2.4 should keep session index trackable when session history tracking is enabled."
+
   Write-Host "[test] Case 2.1: wizard creates safety backups before overwriting files"
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("y") -DebugMode -UseTargetFlag
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case2 -Responses @("n") -DebugMode -UseTargetFlag
   $backupRoot2 = Join-Path $meta2 "backups"
   Assert-True (Test-Path -LiteralPath $backupRoot2 -PathType Container) "Backup root was not created."
   $latestBackup2 = Get-ChildItem -LiteralPath $backupRoot2 -Directory |
@@ -573,7 +597,7 @@ try {
   $ws4 = Join-Path $case4 "remote.code-workspace"
   Set-Content -LiteralPath $ws4 -Value '{"folders":[{"path":"."}]}' -NoNewline
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case4 -Responses @("y") -DebugMode
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case4 -Responses @("n") -DebugMode
   $meta4 = Join-Path $case4 ".vsc_launcher"
   $runner4 = Join-Path $meta4 "runner.ps1"
   $config4 = Join-Path $meta4 "config.json"
@@ -606,8 +630,8 @@ try {
   Set-Content -LiteralPath (Join-Path $projectA "A.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
   Set-Content -LiteralPath (Join-Path $projectB "B.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
 
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $projectA -Responses @("y") -DebugMode
-  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $projectB -Responses @("y") -DebugMode
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $projectA -Responses @("n") -DebugMode
+  Invoke-Wizard -RepoRoot $repoRoot -TargetPath $projectB -Responses @("n") -DebugMode
 
   $configAPath = Join-Path $projectA ".vsc_launcher\config.json"
   $configBPath = Join-Path $projectB ".vsc_launcher\config.json"
@@ -692,8 +716,8 @@ try {
         Set-Content -LiteralPath $case6Gitignore -Value "# wsl unc case`r`n" -NoNewline
 
         Remove-Item Env:CSI_FORCE_NO_WSL -ErrorAction SilentlyContinue
-        # remoteWsl(default yes), codexRunInWsl(yes), createShortcut(yes), shortcutLocation(default desktop), logging(yes)
-        $case6Responses = @("", "y", "y", "", "y")
+        # remoteWsl(default yes), codexRunInWsl(yes), createShortcut(yes), shortcutLocation(default desktop), trackHistory(no)
+        $case6Responses = @("", "y", "y", "", "n")
         Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case6UncRoot -Responses $case6Responses -DebugMode -UseTargetFlag
 
         $case6Launcher = Join-Path $case6UncRoot "vsc_launcher.sh"
@@ -715,7 +739,11 @@ try {
         $case6GitignoreText = Get-Content -LiteralPath $case6Gitignore -Raw
         Assert-Contains $case6GitignoreText "vsc_launcher.*" "Case 6 gitignore missing launcher ignore entry."
         Assert-Contains $case6GitignoreText $case6BridgeCandidates[0].Name "Case 6 gitignore missing Windows WSL shortcut entry."
-        Assert-Contains $case6GitignoreText ".codex/" "Case 6 gitignore should ignore project-local .codex state."
+        Assert-Contains $case6GitignoreText ".codex/*" "Case 6 gitignore should ignore project-local .codex state by wildcard."
+        Assert-Contains $case6GitignoreText "!.codex/config.toml" "Case 6 should keep config.toml trackable."
+        Assert-NotContains $case6GitignoreText "!.codex/sessions/" "Case 6 should keep session history ignored by default."
+        Assert-NotContains $case6GitignoreText "!.codex/memories/" "Case 6 should keep memories ignored by default."
+        Assert-NotContains $case6GitignoreText ".codex/" "Case 6 should not ignore the whole .codex directory."
 
         $case6LauncherText = Get-Content -LiteralPath $case6Launcher -Raw
         Assert-Contains $case6LauncherText 'export CODEX_HOME="$codex_home"' "Case 6 launcher should export CODEX_HOME."
@@ -733,7 +761,7 @@ try {
         New-Item -ItemType Directory -Force -Path $case61 | Out-Null
         Set-Content -LiteralPath (Join-Path $case61 "local.code-workspace") -Value '{"folders":[{"path":"."}]}' -NoNewline
 
-        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case61 -Responses @("", "") -DebugMode -UseTargetFlag
+        Invoke-Wizard -RepoRoot $repoRoot -TargetPath $case61 -Responses @("", "n") -DebugMode -UseTargetFlag
 
         $case61ConfigPath = Join-Path $case61 ".vsc_launcher\config.json"
         Assert-True (Test-Path -LiteralPath $case61ConfigPath -PathType Leaf) "Case 6.1 config not generated."
