@@ -315,6 +315,7 @@ Marketplace automation is provided by `.github/workflows/extension-publish.yml`.
   - `pre-release`: integration branch. Every push/merge auto-publishes Marketplace pre-release.
   - `main`: stable branch. Every push/merge auto-publishes Marketplace stable.
 - CI/Security workflows run only for `main` and `pre-release` (push + pull request).
+- Every extension version change must receive the matching git tag immediately (`v<extension.version>`). Tagging is part of the same release step, not a later cleanup task.
 - Manual publish fallback: run `Extension Publish` via `workflow_dispatch` (`pre-release` or `stable`).
 - Manual stable fallback requires `ref=main` and `release_tag=v<version>`.
 
