@@ -264,7 +264,8 @@ Expected:
 - Generated launcher files and launcher-owned metadata are removed from the project.
 - `.vscode/settings.json`, workspace settings, and the managed `.gitignore` block are cleaned surgically without removing unrelated user edits.
 - If the latest setup backed up a pre-existing managed file, rollback restores that backup instead of deleting blindly.
-- If the optional `.codex` cleanup is enabled, rollback preserves `.codex/config.toml` and removes the rest of `.codex/`.
-- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
+- Backed-up pre-existing managed files can include:
   - `.gitignore`
   - launcher/config files when they existed before overwrite.
+- If the optional `.codex` cleanup is enabled, rollback preserves `.codex/config.toml` and removes the rest of `.codex/`.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.

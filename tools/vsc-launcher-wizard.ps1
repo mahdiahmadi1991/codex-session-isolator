@@ -832,6 +832,10 @@ function Write-Utf8NoBomText {
     [string]$ReferenceText = ""
   )
 
+  $parent = Split-Path -Parent $Path
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    $null = Ensure-Directory -Path $parent
+  }
   $lineEnding = Get-PreferredLineEnding -Text $ReferenceText
   $normalized = if ($null -eq $Content) { "" } else { [string]$Content }
   $normalized = [regex]::Replace($normalized, "`r`n|`r|`n", $lineEnding)
@@ -1083,7 +1087,7 @@ function Save-RollbackManifest {
   $manifestPath = Join-Path $metadataDirPath "rollback.manifest.json"
   $null = Ensure-Directory -Path $metadataDirPath
   Backup-PathIfExists -Path $manifestPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
-  Set-Content -LiteralPath $manifestPath -Value ($Manifest | ConvertTo-Json -Depth 50)
+  Write-Utf8NoBomText -Path $manifestPath -Content ($Manifest | ConvertTo-Json -Depth 50)
   return $manifestPath
 }
 
