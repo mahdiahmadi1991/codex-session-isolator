@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-03-09
+
 ### Added
 
 - Rollback mode for the launcher helper and extension now removes launcher-managed changes for the latest setup using `.vsc_launcher/rollback.manifest.json`, with current-project vs another-project targeting in the extension.
