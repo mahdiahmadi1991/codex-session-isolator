@@ -4,10 +4,6 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-### Changed
-
-- Release/process documentation now requires creating the matching git tag immediately whenever `extension/package.json` version changes, for both stable and pre-release lanes.
-
 ### Added
 
 - Rollback mode for the launcher helper and extension now removes launcher-managed changes for the latest setup using `.vsc_launcher/rollback.manifest.json`, with current-project vs another-project targeting in the extension.
@@ -17,6 +13,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Release/process documentation now requires creating the matching git tag immediately whenever `extension/package.json` version changes, for both stable and pre-release lanes.
 - Wizard-managed `.gitignore` rules now always keep `.codex/config.toml` trackable, and the opt-in git-tracked history mode now also keeps `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` trackable.
 - Documentation and manual test guidance now cover rollback flow, native Trash/Recycle Bin constraints, and the new extension rollback command.
 - Extension command surface now exposes a single public setup command (`Setup Launcher`), removes legacy `codexProjectIsolator.*` commands, and writes best-effort project-local operation breadcrumbs to `.vsc_launcher/logs/extension-YYYYMMDD.log` when project logs already exist.
