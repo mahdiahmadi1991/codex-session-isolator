@@ -13,6 +13,7 @@ It keeps Codex session state isolated per project by driving the existing launch
 
 - Initializes launcher files inside the selected project root.
 - Reopens VS Code through the generated launcher.
+- Rolls back launcher-managed changes from the latest setup.
 - Opens launcher logs for debugging.
 - Opens launcher config quickly for inspection.
 
@@ -28,8 +29,8 @@ When launched through generated launcher:
 - Primary Command Palette commands:
 - `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Rollback Launcher Changes`
 - Utility commands (kept available but hidden from the default Command Palette list):
-- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -37,9 +38,7 @@ When launched through generated launcher:
 
 1. Install extension `2ma.codex-session-isolator` from VS Code Marketplace.
 2. Open your project folder/workspace in VS Code.
-3. Setup launcher:
-   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
-   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then confirm the final reopen prompt for the current project.
+3. Run `Codex Session Isolator: Setup Launcher`.
 4. At command start, choose target scope:
    - `Current project (recommended)`
    - `Another project`
@@ -86,9 +85,21 @@ If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mi
 For WSL-hosted targets, wizard can generate a Windows shortcut `Open <project>.lnk` and lets you choose location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 Remote WSL launches also isolate the VS Code WSL server per project by using `.vsc_launcher/vscode-agent` as `VSCODE_AGENT_FOLDER`.
 
+Rollback notes:
+
+- `Rollback Launcher Changes` works for `Current project` or `Another project`.
+- Rollback preserves user edits in managed files where possible and only removes launcher-owned artifacts automatically.
+- If the target project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is preserved.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
+
 ## Cleanup/Uninstall
 
-To remove generated artifacts safely from one project:
+Preferred cleanup for one project:
+
+1. Run `Codex Session Isolator: Rollback Launcher Changes`.
+2. Confirm the summary for the target project.
+
+Manual cleanup fallback:
 
 1. Delete launcher files from project root:
    - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
@@ -126,16 +137,16 @@ To remove generated artifacts safely from one project:
 ## Troubleshooting
 
 - `PowerShell was not found`:
-  install `pwsh` (PowerShell 7) or `powershell.exe`, then run Initialize again.
+  install `pwsh` (PowerShell 7) or `powershell.exe`, then run `Setup Launcher` again.
 - `Launcher file not found in target root`:
-  run `Initialize Launcher` first (or the one-click setup command if available).
+  run `Setup Launcher` first.
 - WSL prompts/options are missing:
   run `wsl --status`; if unavailable, use local mode or install/configure WSL.
 - Permission/write errors:
   check folder write access and rerun. Existing managed files are backed up under `.vsc_launcher/backups/`.
 - Always check logs:
   1. VS Code Output channel: `Codex Session Isolator`
-  2. Project logs: `.vsc_launcher/logs`
+  2. Project logs: `.vsc_launcher/logs` (`launcher-*.log`, wizard logs, and best-effort `extension-YYYYMMDD.log` breadcrumbs when the logs directory already exists)
 
 ## Source
 
