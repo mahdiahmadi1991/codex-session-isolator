@@ -70,6 +70,7 @@ Immediately after any extension version change is committed, create the matching
 - Stable version `X.Y.Z` -> create tag `vX.Y.Z`
 - Pre-release version `X.Y.Z` -> create tag `vX.Y.Z`
 - The extension version and git tag must stay 1:1 across both channels because the numeric version lanes are already unique.
+- The actual `git tag` / `git push origin <tag>` commands are shown in Step 6, but they are part of the same release work session as Steps 4 and 5.
 
 ## 5) Push release branch and open stable PR
 
