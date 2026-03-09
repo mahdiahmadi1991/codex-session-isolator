@@ -24,8 +24,13 @@ Recommended fresh-project flow:
 2. Complete wizard prompts.
 3. When setup finishes for the current project, the extension asks whether to reopen immediately with the launcher.
 4. If you confirm, the current VS Code window closes and the launcher opens a fresh isolated window.
-5. When you want to undo the latest setup, run `Codex Session Isolator: Rollback Launcher Changes`, review the summary, and confirm.
+5. When you want to undo the latest setup, run `Codex Session Isolator: Rollback Launcher Changes` and answer only the rollback questions that are relevant for that target and environment.
 6. If the target project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is preserved.
+
+Validation note:
+
+- The extension flow is covered by repository CI on Windows, Linux, and macOS, and its rollback path has also been manually validated on WSL-backed project targets.
+- Environments outside that matrix should be treated as best-effort until they are explicitly added to the validation matrix.
 
 ## Settings
 

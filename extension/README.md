@@ -4,6 +4,10 @@ Per-project Codex session isolation for VS Code targets (workspaces or folders).
 
 ![Codex Session Isolator Hero](https://raw.githubusercontent.com/mahdiahmadi1991/codex-session-isolator/main/extension/media/hero.png)
 
+[![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
+[![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC?logo=visualstudiocode)](https://code.visualstudio.com/)
+
 ## Why this extension
 
 This extension gives you a guided VS Code UX for creating and using project-scoped launcher files.
@@ -16,6 +20,12 @@ It keeps Codex session state isolated per project by driving the existing launch
 - Rolls back launcher-managed changes from the latest setup.
 - Opens launcher logs for debugging.
 - Opens launcher config quickly for inspection.
+
+## Validation Status
+
+- Covered by automated CI on Windows, Linux, and macOS for the repository's supported launcher and extension flows.
+- Manually validated on WSL-backed project targets for setup and rollback behavior.
+- Environments outside those validated paths should be considered best-effort until they are explicitly added to the test matrix.
 
 When launched through generated launcher:
 
@@ -97,7 +107,7 @@ Rollback notes:
 Preferred cleanup for one project:
 
 1. Run `Codex Session Isolator: Rollback Launcher Changes`.
-2. Confirm the summary for the target project.
+2. Answer only the rollback questions that are relevant for that target and environment.
 
 Manual cleanup fallback:
 

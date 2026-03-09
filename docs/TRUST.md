@@ -45,8 +45,14 @@ The latest setup also records rollback ownership in `.vsc_launcher/rollback.mani
   - dependency review (PR)
   - secret scanning
   - PowerShell syntax validation
-  - extension dependency audit
-  - CodeQL analysis
+- extension dependency audit
+- CodeQL analysis
+
+## Validation boundaries
+
+- Current confidence is highest for the flows covered by CI on Windows, Linux, and macOS, plus manual validation on WSL-backed targets.
+- Behavior outside that validated matrix should be treated as best-effort, not as an implicit compatibility guarantee.
+- If a new platform combination matters for release confidence, add it to `docs/TESTING.md` and validate it before advertising it as covered.
 
 ## Release integrity
 
