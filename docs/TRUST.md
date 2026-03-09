@@ -5,6 +5,7 @@
 - Project behavior is local-first and file-system scoped to the selected target root.
 - No global shell profile changes are performed.
 - Outside launcher flow, default Codex behavior remains unchanged.
+- Public docs and Marketplace-facing content should state validated environments explicitly and avoid implying broader compatibility than the current matrix supports.
 
 ## Session and credential isolation
 

@@ -10,6 +10,13 @@
 
 Codex Session Isolator gives each code environment its own Codex session state.
 
+Why trust this project:
+
+- local-first behavior only
+- no telemetry or remote upload path
+- project-scoped generated artifacts
+- validated CI coverage on Windows, Linux, and macOS, plus manual WSL-backed validation
+
 When launched through this tool, `CODEX_HOME` is set to:
 
 `<target-directory>/.codex`
