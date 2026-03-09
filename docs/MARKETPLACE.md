@@ -20,6 +20,28 @@ Current extension identifier:
 - `extension/CHANGELOG.md` exists.
 - `extension/LICENSE` exists.
 
+## Recommended Marketplace page shape
+
+Prefer this order in `extension/README.md`:
+
+1. title + hero
+2. compact badge row
+3. short value proposition
+4. `Why trust this extension`
+5. `Tested environments`
+6. `What you can do`
+7. quick start
+
+Badge guidance:
+
+- Keep the Marketplace badge row compact and high-signal.
+- Prefer:
+  - `CI`
+  - `Security`
+  - `VS Code 1.95+`
+- Consider one additional trust-oriented badge only if it still renders cleanly.
+- Avoid low-signal vanity badges or badges that imply unsupported platform coverage.
+
 ## Build and package
 
 ```bash

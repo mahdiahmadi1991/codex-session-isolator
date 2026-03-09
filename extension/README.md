@@ -1,48 +1,51 @@
 # Codex Session Isolator
 
-Per-project Codex session isolation for VS Code targets (workspaces or folders).
-
 ![Codex Session Isolator Hero](https://raw.githubusercontent.com/mahdiahmadi1991/codex-session-isolator/main/extension/media/hero.png)
 
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
 [![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC?logo=visualstudiocode)](https://code.visualstudio.com/)
 
-## Why this extension
+Project-scoped launcher setup for isolated Codex sessions in VS Code.
 
-This extension gives you a guided VS Code UX for creating and using project-scoped launcher files.
-It keeps Codex session state isolated per project by driving the existing launcher backend.
+This extension gives you a guided VS Code flow for creating, reopening, and rolling back project-local launcher files. It keeps Codex session state scoped to the selected project by driving the same launcher backend used by the CLI helpers.
 
-## What it does
+## Why trust this extension
 
-- Initializes launcher files inside the selected project root.
-- Reopens VS Code through the generated launcher.
-- Rolls back launcher-managed changes from the latest setup.
-- Opens launcher logs for debugging.
-- Opens launcher config quickly for inspection.
+- Local-first: it does not upload project files or add telemetry.
+- Project-scoped: generated artifacts stay inside the selected project.
+- Reversible: setup creates backups and records rollback metadata for the latest setup.
+- Bounded: rollback targets launcher-managed changes only unless you explicitly opt into `.codex` runtime cleanup.
 
-## Validation Status
+## Tested environments
 
 - Covered by automated CI on Windows, Linux, and macOS for the repository's supported launcher and extension flows.
 - Manually validated on WSL-backed project targets for setup and rollback behavior.
 - Environments outside those validated paths should be considered best-effort until they are explicitly added to the test matrix.
 
-When launched through generated launcher:
+## What you can do
 
-- `CODEX_HOME` is set to `<project>/.codex` for that session.
-- Default/global behavior remains unchanged outside launcher flow.
-- Chat/session state is isolated per project, so global/default history from other projects is not shown.
-- Different project roots can use different Codex account/API-key context.
+- Set up launcher files inside the selected project root.
+- Reopen the current project through the generated launcher.
+- Roll back the latest launcher-managed setup.
+- Open launcher logs or launcher config when you need to inspect behavior.
 
 ## Commands
 
 - Primary Command Palette commands:
-- `Codex Session Isolator: Setup Launcher`
-- `Codex Session Isolator: Reopen With Launcher`
-- `Codex Session Isolator: Rollback Launcher Changes`
-- Utility commands (kept available but hidden from the default Command Palette list):
-- `Codex Session Isolator: Open Launcher Logs`
-- `Codex Session Isolator: Open Launcher Config`
+  - `Codex Session Isolator: Setup Launcher`
+  - `Codex Session Isolator: Reopen With Launcher`
+  - `Codex Session Isolator: Rollback Launcher Changes`
+- Utility commands:
+  - `Codex Session Isolator: Open Launcher Logs`
+  - `Codex Session Isolator: Open Launcher Config`
+
+## What changes when launched through the generated launcher
+
+- `CODEX_HOME` is set to `<project>/.codex` for that session.
+- Default/global Codex behavior remains unchanged outside launcher flow.
+- Chat/session state is isolated per project, so history from other Codex homes is not shown.
+- Different project roots can keep separate Codex account/API-key context.
 
 ## Quick Start
 
@@ -61,6 +64,13 @@ When launched through generated launcher:
 Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
+
+## Rollback behavior
+
+- `Rollback Launcher Changes` works for `Current project` or `Another project`.
+- Rollback preserves user edits in managed files where possible and only removes launcher-owned artifacts automatically.
+- If the target project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is preserved.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
 
 ## Release channels
 
@@ -83,6 +93,8 @@ CLI alternative:
 code --install-extension 2ma.codex-session-isolator --pre-release
 ```
 
+## WSL notes
+
 Default wizard answers on Windows + WSL are context-aware:
 
 - Local Windows path: Remote WSL launch `No`
@@ -94,13 +106,6 @@ Default wizard answers on Windows + WSL are context-aware:
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
 For WSL-hosted targets, wizard can generate a Windows shortcut `Open <project>.lnk` and lets you choose location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
 Remote WSL launches also isolate the VS Code WSL server per project by using `.vsc_launcher/vscode-agent` as `VSCODE_AGENT_FOLDER`.
-
-Rollback notes:
-
-- `Rollback Launcher Changes` works for `Current project` or `Another project`.
-- Rollback preserves user edits in managed files where possible and only removes launcher-owned artifacts automatically.
-- If the target project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is preserved.
-- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
 
 ## Cleanup/Uninstall
 
