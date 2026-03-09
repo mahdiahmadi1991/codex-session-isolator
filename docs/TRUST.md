@@ -5,6 +5,7 @@
 - Project behavior is local-first and file-system scoped to the selected target root.
 - No global shell profile changes are performed.
 - Outside launcher flow, default Codex behavior remains unchanged.
+- Public docs and Marketplace-facing content should state validated environments explicitly and avoid implying broader compatibility than the current matrix supports.
 
 ## Session and credential isolation
 
@@ -28,14 +29,14 @@ Before overwriting managed files, backups are created under:
 
 - `.vsc_launcher/backups/<timestamp-pid>/`
 
-This allows manual rollback when needed.
+The latest setup also records rollback ownership in `.vsc_launcher/rollback.manifest.json` so launcher-managed changes can be rolled back without guessing across unrelated user files.
 
 ## Runtime trust controls (extension)
 
 - Extension actions require VS Code trusted workspace.
-- Initialization prompts an explicit confirmation by default.
-- Confirmation behavior can be controlled with:
-  - `codexSessionIsolator.requireConfirmation`
+- Rollback only asks the follow-up questions that are actually needed for the selected target and environment.
+- Extension operation logs stay local: flow breadcrumbs remain in the VS Code output channel and, when a project already has `.vsc_launcher/logs`, are also appended there as best-effort local log entries.
+- Extension logging remains non-blocking and does not create remote uploads, telemetry, or credential-bearing secret dumps.
 
 ## CI security controls
 
@@ -45,8 +46,14 @@ This allows manual rollback when needed.
   - dependency review (PR)
   - secret scanning
   - PowerShell syntax validation
-  - extension dependency audit
-  - CodeQL analysis
+- extension dependency audit
+- CodeQL analysis
+
+## Validation boundaries
+
+- Current confidence is highest for the flows covered by CI on Windows, Linux, and macOS, plus manual validation on WSL-backed targets.
+- Behavior outside that validated matrix should be treated as best-effort, not as an implicit compatibility guarantee.
+- If a new platform combination matters for release confidence, add it to `docs/TESTING.md` and validate it before advertising it as covered.
 
 ## Release integrity
 
@@ -56,4 +63,3 @@ Marketplace publish workflow generates:
 - SHA-256 checksum (`.vsix.sha256`)
 
 For stable releases, these are attached as release assets for independent verification.
-

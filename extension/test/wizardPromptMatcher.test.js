@@ -15,7 +15,7 @@ test("normal flow resolves known prompts with prepared answers", () => {
     createWindowsShortcut: "y",
     windowsShortcutLocationSelection: "4",
     windowsShortcutCustomPath: "C:\\Users\\Me\\Desktop",
-    ignoreSessions: "y"
+    trackSessionHistory: "y"
   };
 
   const actions1 = consumeWizardOutputChunk(
@@ -53,7 +53,7 @@ test("normal flow resolves known prompts with prepared answers", () => {
 
   const actions4 = consumeWizardOutputChunk(
     state,
-    "\nSet Codex to run in WSL for this project? [Y/n]:\nCreate Windows shortcut for double-click launch? [y/N]:\nSelect Windows shortcut location:\n1. Project root\n2. Desktop\n3. Start Menu\n4. Custom path\nSelect [default: 1]:\nEnter Windows shortcut directory path [C:\\Users\\Me\\Desktop]:\nIgnore Codex chat sessions in gitignore? [y/N]:",
+    "\nSet Codex to run in WSL for this project? [Y/n]:\nCreate Windows shortcut for double-click launch? [y/N]:\nSelect Windows shortcut location:\n1. Project root\n2. Desktop\n3. Start Menu\n4. Custom path\nSelect [default: 1]:\nEnter Windows shortcut directory path [C:\\Users\\Me\\Desktop]:\nTrack Codex session history in git? [y/N]:",
     answers
   );
   assert.equal(actions4.length, 5);
@@ -70,7 +70,7 @@ test("normal flow resolves known prompts with prepared answers", () => {
   assert.equal(actions4[3].promptId, "windowsShortcutCustomPath");
   assert.equal(actions4[3].answer, "C:\\Users\\Me\\Desktop");
   assert.equal(actions4[4].kind, "answer");
-  assert.equal(actions4[4].promptId, "ignoreSessions");
+  assert.equal(actions4[4].promptId, "trackSessionHistory");
   assert.equal(actions4[4].answer, "y");
 });
 
@@ -79,7 +79,7 @@ test("unknown extra prompt fails fast", () => {
   const actions = consumeWizardOutputChunk(
     state,
     "Enable telemetry uploads? [y/N]:",
-    { ignoreSessions: "y" }
+    { trackSessionHistory: "y" }
   );
 
   assert.equal(actions.length, 1);
@@ -92,17 +92,17 @@ test("prompt order change is handled by prompt text", () => {
   const answers = {
     remoteWsl: "n",
     codexRunInWsl: "n",
-    ignoreSessions: "y"
+    trackSessionHistory: "y"
   };
 
   const actions1 = consumeWizardOutputChunk(
     state,
-    "Ignore Codex chat sessions in gitignore? [y/N]:",
+    "Track Codex session history in git? [y/N]:",
     answers
   );
   assert.equal(actions1.length, 1);
   assert.equal(actions1[0].kind, "answer");
-  assert.equal(actions1[0].promptId, "ignoreSessions");
+  assert.equal(actions1[0].promptId, "trackSessionHistory");
   assert.equal(actions1[0].answer, "y");
 
   const actions2 = consumeWizardOutputChunk(
@@ -128,15 +128,15 @@ test("prompt order change is handled by prompt text", () => {
 
 test("partial prompt split across chunks is matched once", () => {
   const state = createWizardPromptParserState();
-  const answers = { ignoreSessions: "n" };
+  const answers = { trackSessionHistory: "n" };
 
-  const first = consumeWizardOutputChunk(state, "Ignore Codex chat ses", answers);
+  const first = consumeWizardOutputChunk(state, "Track Codex session his", answers);
   assert.equal(first.length, 0);
 
-  const second = consumeWizardOutputChunk(state, "sions in gitignore? [y/N]:", answers);
+  const second = consumeWizardOutputChunk(state, "tory in git? [y/N]:", answers);
   assert.equal(second.length, 1);
   assert.equal(second[0].kind, "answer");
-  assert.equal(second[0].promptId, "ignoreSessions");
+  assert.equal(second[0].promptId, "trackSessionHistory");
   assert.equal(second[0].answer, "n");
 
   const third = consumeWizardOutputChunk(state, "\n", answers);

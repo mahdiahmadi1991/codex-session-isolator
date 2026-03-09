@@ -2,7 +2,7 @@
   "name": "codex-session-isolator",
   "displayName": "Codex Session Isolator",
   "description": "Workspace launcher assistant for isolated Codex sessions in VS Code.",
-  "version": "0.3.10",
+  "version": "0.3.12",
   "publisher": "2ma",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -36,24 +36,15 @@
     "Machine Learning"
   ],
   "activationEvents": [
-    "onCommand:codexSessionIsolator.initialize",
     "onCommand:codexSessionIsolator.setup",
     "onCommand:codexSessionIsolator.reopenWithLauncher",
+    "onCommand:codexSessionIsolator.rollback",
     "onCommand:codexSessionIsolator.openLogs",
-    "onCommand:codexSessionIsolator.openConfig",
-    "onCommand:codexProjectIsolator.initialize",
-    "onCommand:codexProjectIsolator.setup",
-    "onCommand:codexProjectIsolator.reopenWithLauncher",
-    "onCommand:codexProjectIsolator.openLogs",
-    "onCommand:codexProjectIsolator.openConfig"
+    "onCommand:codexSessionIsolator.openConfig"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "codexSessionIsolator.initialize",
-        "title": "Codex Session Isolator: Initialize Launcher"
-      },
       {
         "command": "codexSessionIsolator.setup",
         "title": "Codex Session Isolator: Setup Launcher"
@@ -63,60 +54,20 @@
         "title": "Codex Session Isolator: Reopen With Launcher"
       },
       {
+        "command": "codexSessionIsolator.rollback",
+        "title": "Codex Session Isolator: Rollback Launcher Changes"
+      },
+      {
         "command": "codexSessionIsolator.openLogs",
         "title": "Codex Session Isolator: Open Launcher Logs"
       },
       {
         "command": "codexSessionIsolator.openConfig",
         "title": "Codex Session Isolator: Open Launcher Config"
-      },
-      {
-        "command": "codexProjectIsolator.initialize",
-        "title": "Codex Session Isolator (Legacy): Initialize Launcher"
-      },
-      {
-        "command": "codexProjectIsolator.setup",
-        "title": "Codex Session Isolator (Legacy): Setup Launcher"
-      },
-      {
-        "command": "codexProjectIsolator.reopenWithLauncher",
-        "title": "Codex Session Isolator (Legacy): Reopen With Launcher"
-      },
-      {
-        "command": "codexProjectIsolator.openLogs",
-        "title": "Codex Session Isolator (Legacy): Open Launcher Logs"
-      },
-      {
-        "command": "codexProjectIsolator.openConfig",
-        "title": "Codex Session Isolator (Legacy): Open Launcher Config"
       }
     ],
     "menus": {
       "commandPalette": [
-        {
-          "command": "codexProjectIsolator.initialize",
-          "when": "false"
-        },
-        {
-          "command": "codexProjectIsolator.reopenWithLauncher",
-          "when": "false"
-        },
-        {
-          "command": "codexProjectIsolator.setup",
-          "when": "false"
-        },
-        {
-          "command": "codexProjectIsolator.openLogs",
-          "when": "false"
-        },
-        {
-          "command": "codexProjectIsolator.openConfig",
-          "when": "false"
-        },
-        {
-          "command": "codexSessionIsolator.initialize",
-          "when": "false"
-        },
         {
           "command": "codexSessionIsolator.openLogs",
           "when": "false"

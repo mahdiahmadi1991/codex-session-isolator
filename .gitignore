@@ -15,7 +15,6 @@ extension/*.vsix.sha256
 
 # IDE
 .vscode/
-.idea/
 
 # PowerShell
 *.ps1xml

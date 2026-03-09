@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-03-09
+
+### Added
+
+- Rollback mode for the launcher helper and extension now removes launcher-managed changes for the latest setup using `.vsc_launcher/rollback.manifest.json`, with current-project vs another-project targeting in the extension.
+- Windows integration tests now cover successful rollback with preserved user edits plus the missing-manifest failure path.
+- Extension unit coverage now verifies the public command surface in `extension/package.json`, including the removal of legacy command IDs.
+- Linux integration coverage now verifies the optional rollback cleanup that removes `.codex` runtime data while preserving `.codex/config.toml`.
+
+### Changed
+
+- Wizard-managed `.gitignore` rules now always keep `.codex/config.toml` trackable, and the opt-in git-tracked history mode now also keeps `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` trackable.
+- Documentation and manual test guidance now cover rollback flow, native Trash/Recycle Bin constraints, and the new extension rollback command.
+- Extension command surface now exposes a single public setup command (`Setup Launcher`), removes legacy `codexProjectIsolator.*` commands, and writes best-effort project-local operation breadcrumbs to `.vsc_launcher/logs/extension-YYYYMMDD.log` when project logs already exist.
+- User-facing help text and committed docs now use generic sample paths instead of host-specific absolute paths.
+- Rollback now preflights native Trash/Recycle Bin availability before mutating managed files, so a `Stop` decision does not leave partial rollback edits behind on unsupported paths such as WSL UNC targets.
+- Rollback/setup file rewrites now preserve existing line endings for managed JSON/text files, preventing formatting-only git noise after rollback on LF-based projects.
+- Extension failure notifications no longer tell the user to manually send output-channel logs.
+- Extension rollback now offers an opt-in `.codex` runtime cleanup prompt only when removable `.codex` entries exist, preserves `config.toml`, and no longer shows `Open Logs` in the rollback completion modal.
+
 ## [0.3.10] - 2026-03-02
 
 ### Added

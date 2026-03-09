@@ -4,6 +4,20 @@ All notable changes to this extension are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-03-09
+
+### Added
+
+- Rollback support for the latest launcher-managed setup, including current-project vs another-project targeting and safe rollback metadata.
+- Unit coverage that locks the supported command surface and guards against legacy command drift in the extension manifest.
+
+### Changed
+
+- Public command surface now centers on `Setup Launcher`, `Reopen With Launcher`, and `Rollback Launcher Changes`, with obsolete legacy commands removed.
+- Marketplace-facing README presentation now emphasizes trust, tested environments, and clearer command discovery.
+- Extension rollback can optionally remove project `.codex` runtime data while preserving `.codex/config.toml`.
+- Rollback completion no longer offers the low-value `Open Logs` action.
+
 ## [0.3.10] - 2026-03-02
 
 ### Changed

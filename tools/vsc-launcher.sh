@@ -78,7 +78,11 @@ for arg in "$@"; do
         expect_target_value=1
         continue
         ;;
-      --help|-help|-h|/\?|--debug|-debug|-debugmode)
+      --help|-help|-h|/\?|--debug|-debug|-debugmode|--rollback|-rollback)
+        converted_args+=("$arg")
+        continue
+        ;;
+      --rollback-codex-runtime-data|-rollbackcodexruntimedata)
         converted_args+=("$arg")
         continue
         ;;

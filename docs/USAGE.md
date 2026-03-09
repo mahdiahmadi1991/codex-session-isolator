@@ -19,21 +19,26 @@ Launch target rules (VS Code open target):
 
 Outside this launcher, your default Codex behavior remains unchanged.
 
+Validation note:
+
+- The launcher/helper flows are currently validated by CI on Windows, Linux, and macOS, with additional manual validation on WSL-backed targets.
+- Any other environment combination should be considered best-effort until it is explicitly added to the validation matrix.
+
 Session visibility and credentials:
 
 - Launcher sessions read/write state from project-local `.codex`.
 - Previous chats from your default/global Codex home are not shown in the isolated launcher session.
 - You can operate different projects with different Codex account/API-key context because each project uses its own `.codex`.
 
-## VS Code extension (preview)
+## VS Code extension
 
 If you use the extension layer (`extension/`), run these commands from command palette:
 
 - Primary Command Palette commands:
 - `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Rollback Launcher Changes`
 - Utility commands (available for direct use but hidden from the default Command Palette list):
-- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -41,6 +46,7 @@ Extension target scope:
 
 - At operation start, extension asks whether to apply changes to `Current project` or `Another project`.
 - If `Another project` is selected during setup, extension does not reopen/close current VS Code window and shows a completion report for the selected target.
+- Rollback uses the same target-selection model and then asks only the follow-up questions that are actually needed for that target.
 
 Dev setup:
 
@@ -75,6 +81,7 @@ Linux/macOS (helper):
 chmod +x ./tools/vsc-launcher.sh
 ./tools/vsc-launcher.sh "/path/to/project"
 ./tools/vsc-launcher.sh "/path/to/project" --debug
+./tools/vsc-launcher.sh "/path/to/project" --rollback
 ```
 
 Direct wizard:
@@ -89,6 +96,7 @@ Wizard outputs (Windows):
 - `<selected-location>\Open <project>.lnk` (Windows shortcut; optional for WSL-hosted targets)
 - `<target>\.vsc_launcher\config.json`
 - `<target>\.vsc_launcher\wizard.defaults.json`
+- `<target>\.vsc_launcher\rollback.manifest.json`
 - `<target>\.vsc_launcher\runner.ps1`
 - `<target>\.vsc_launcher\codex-wsl-wrapper.sh` (generated only for local Windows + Codex-in-WSL mode)
 - `<target>\.vsc_launcher\vscode-user-data\` (VS Code isolated process profile, local Windows mode only)
@@ -98,8 +106,11 @@ Wizard behavior:
 
 - Replaces generated launcher files if they already exist.
 - Updates a managed `.gitignore` block only when `.gitignore` already exists in target folder.
+- The managed `.gitignore` block always keeps `.codex/config.toml` trackable.
+- If `Track Codex session history in git` is enabled, the managed `.gitignore` block also keeps `.codex/sessions/**`, `.codex/archived_sessions/**`, `.codex/memories/**`, and `.codex/session_index.jsonl` trackable.
 - Creates safety backups before overwriting managed files:
   - `.vsc_launcher/backups/<timestamp-pid>/`
+- Records rollback ownership metadata for the latest setup in `.vsc_launcher/rollback.manifest.json`.
 - Always updates `.vscode/settings.json` with:
   - `chatgpt.runCodexInWindowsSubsystemForLinux`
   - `chatgpt.openOnStartup=true`
@@ -122,11 +133,37 @@ Wizard behavior:
   - Remote WSL workspace or WSL UNC target (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project` is prompted only when Remote WSL mode is `Yes` (default `Yes`)
   - WSL distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro (`wsl --status`)
-  - `Ignore Codex chat sessions in gitignore`: `No`
+  - `Track Codex session history in git`: `No`
 - Enables launcher logging only in wizard debug mode (`--debug`).
 - In local Windows mode, uses a project-scoped VS Code `--user-data-dir` to avoid reusing an existing global VS Code process and to apply `CODEX_HOME` reliably.
 - In Remote WSL mode, skips isolated `--user-data-dir` because WSL `code` CLI does not support it, and instead uses a project-scoped `VSCODE_AGENT_FOLDER` under `.vsc_launcher/vscode-agent` so the WSL VS Code server (and Codex child processes) stay isolated per project.
 - For local Windows + Codex-in-WSL mode, automatically sets profile-scoped `chatgpt.cliExecutable` to a generated WSL wrapper so Codex app-server receives project `CODEX_HOME`.
+
+## Rollback
+
+Use rollback when you want to remove launcher-managed changes from the latest setup for one project.
+
+Commands:
+
+```powershell
+.\tools\vsc-launcher.ps1 "C:\path\to\project" --rollback
+```
+
+```bash
+./tools/vsc-launcher.sh "/path/to/project" --rollback
+```
+
+Rollback behavior:
+
+- Uses `.vsc_launcher/rollback.manifest.json` from the latest setup only.
+- Removes launcher-owned files and directories.
+- Restores backed-up pre-setup files when safe.
+- Edits `.vscode/settings.json`, workspace settings, and the managed `.gitignore` block surgically so user changes are preserved.
+- In the extension flow, rollback asks whether to also remove project Codex runtime data under `.codex/` when removable entries exist there.
+- If that optional cleanup is enabled, rollback preserves `.codex/config.toml` and removes the rest of `.codex/`.
+- Uses native Trash/Recycle Bin when available.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
+- If no rollback manifest exists for the target, rollback fails closed instead of guessing.
 
 ## Windows
 
