@@ -36,6 +36,21 @@ function Assert-NotContains {
   }
 }
 
+function Assert-NotContainsLine {
+  param(
+    [string]$Text,
+    [string]$UnexpectedLine,
+    [string]$Message
+  )
+
+  $lines = $Text -split "`r?`n"
+  foreach ($line in $lines) {
+    if ($line.Trim() -eq $UnexpectedLine) {
+      throw "Assertion failed: $Message`nUnexpected line: $UnexpectedLine`nActual: $Text"
+    }
+  }
+}
+
 function Assert-HiddenOnWindows {
   param(
     [string]$Path,
@@ -533,7 +548,7 @@ try {
   Assert-NotContains $gitignoreText2 "!.codex/archived_sessions/" "Archived sessions should remain ignored by default."
   Assert-NotContains $gitignoreText2 "!.codex/memories/" "Memories should remain ignored by default."
   Assert-NotContains $gitignoreText2 "!.codex/session_index.jsonl" "Session index should remain ignored by default."
-  Assert-NotContains $gitignoreText2 ".codex/" "Whole .codex directory should not be ignored when config.toml must stay trackable."
+  Assert-NotContainsLine $gitignoreText2 ".codex/" "Whole .codex directory should not be ignored when config.toml must stay trackable."
 
   Write-Host "[test] Case 2.3: wizard does not create .gitignore when file is absent"
   $case23 = Join-Path $tmpRoot "case23-no-gitignore"
@@ -828,7 +843,7 @@ try {
         Assert-Contains $case6GitignoreText "!.codex/config.toml" "Case 6 should keep config.toml trackable."
         Assert-NotContains $case6GitignoreText "!.codex/sessions/" "Case 6 should keep session history ignored by default."
         Assert-NotContains $case6GitignoreText "!.codex/memories/" "Case 6 should keep memories ignored by default."
-        Assert-NotContains $case6GitignoreText ".codex/" "Case 6 should not ignore the whole .codex directory."
+        Assert-NotContainsLine $case6GitignoreText ".codex/" "Case 6 should not ignore the whole .codex directory."
 
         $case6LauncherText = Get-Content -LiteralPath $case6Launcher -Raw
         Assert-Contains $case6LauncherText 'export CODEX_HOME="$codex_home"' "Case 6 launcher should export CODEX_HOME."
