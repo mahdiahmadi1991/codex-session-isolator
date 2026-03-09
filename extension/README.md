@@ -1,45 +1,57 @@
 # Codex Session Isolator
 
-Per-project Codex session isolation for VS Code targets (workspaces or folders).
-
 ![Codex Session Isolator Hero](https://raw.githubusercontent.com/mahdiahmadi1991/codex-session-isolator/main/extension/media/hero.png)
 
-## Why this extension
+[![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
+[![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC?logo=visualstudiocode)](https://code.visualstudio.com/)
 
-This extension gives you a guided VS Code UX for creating and using project-scoped launcher files.
-It keeps Codex session state isolated per project by driving the existing launcher backend.
+Project-scoped launcher setup for isolated Codex sessions in VS Code.
 
-## What it does
+This extension gives you a guided VS Code flow for creating, reopening, and rolling back project-local launcher files. It keeps Codex session state scoped to the selected project by driving the same launcher backend used by the CLI helpers.
 
-- Initializes launcher files inside the selected project root.
-- Reopens VS Code through the generated launcher.
-- Opens launcher logs for debugging.
-- Opens launcher config quickly for inspection.
+## Why trust this extension
 
-When launched through generated launcher:
+- Local-first: it does not upload project files or add telemetry.
+- Project-scoped: generated artifacts stay inside the selected project.
+- Reversible: setup creates backups and records rollback metadata for the latest setup.
+- Bounded: rollback targets launcher-managed changes only unless you explicitly opt into `.codex` runtime cleanup.
 
-- `CODEX_HOME` is set to `<project>/.codex` for that session.
-- Default/global behavior remains unchanged outside launcher flow.
-- Chat/session state is isolated per project, so global/default history from other projects is not shown.
-- Different project roots can use different Codex account/API-key context.
+## Tested environments
+
+- Covered by automated CI on Windows, Linux, and macOS for the repository's supported launcher and extension flows.
+- Manually validated on WSL-backed project targets for setup and rollback behavior.
+- Environments outside those validated paths should be considered best-effort until they are explicitly added to the test matrix.
+
+## What you can do
+
+- Set up launcher files inside the selected project root.
+- Reopen the current project through the generated launcher.
+- Roll back the latest launcher-managed setup.
+- Open launcher logs or launcher config when you need to inspect behavior.
 
 ## Commands
 
 - Primary Command Palette commands:
-- `Codex Session Isolator: Setup Launcher`
-- `Codex Session Isolator: Reopen With Launcher`
-- Utility commands (kept available but hidden from the default Command Palette list):
-- `Codex Session Isolator: Initialize Launcher`
-- `Codex Session Isolator: Open Launcher Logs`
-- `Codex Session Isolator: Open Launcher Config`
+  - `Codex Session Isolator: Setup Launcher`
+  - `Codex Session Isolator: Reopen With Launcher`
+  - `Codex Session Isolator: Rollback Launcher Changes`
+- Utility commands:
+  - `Codex Session Isolator: Open Launcher Logs`
+  - `Codex Session Isolator: Open Launcher Config`
+
+## What changes when launched through the generated launcher
+
+- `CODEX_HOME` is set to `<project>/.codex` for that session.
+- Default/global Codex behavior remains unchanged outside launcher flow.
+- Chat/session state is isolated per project, so history from other Codex homes is not shown.
+- Different project roots can keep separate Codex account/API-key context.
 
 ## Quick Start
 
 1. Install extension `2ma.codex-session-isolator` from VS Code Marketplace.
 2. Open your project folder/workspace in VS Code.
-3. Setup launcher:
-   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
-   - Otherwise run `Codex Session Isolator: Initialize Launcher`, answer wizard questions, then confirm the final reopen prompt for the current project.
+3. Run `Codex Session Isolator: Setup Launcher`.
 4. At command start, choose target scope:
    - `Current project (recommended)`
    - `Another project`
@@ -53,6 +65,13 @@ Expected value:
 
 - `<project-root>/.codex` (or Linux path equivalent in WSL/Unix modes)
 
+## Rollback behavior
+
+- `Rollback Launcher Changes` works for `Current project` or `Another project`.
+- Rollback preserves user edits in managed files where possible and only removes launcher-owned artifacts automatically.
+- If the target project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is preserved.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
+
 ## Release channels
 
 - Stable channel: published from `main`.
@@ -60,6 +79,7 @@ Expected value:
 - Stable uses even patch versions (`x.y.0`, `x.y.2`, ...).
 - Pre-release uses odd patch versions (`x.y.1`, `x.y.3`, ...).
 - The same numeric version is never reused across both channels.
+- If a newer pre-release build exists in Marketplace, VS Code can still show a `Preview` badge on the extension details page even when the installed build is a stable version or a locally installed VSIX.
 
 Install pre-release build from VS Code:
 
@@ -73,13 +93,15 @@ CLI alternative:
 code --install-extension 2ma.codex-session-isolator --pre-release
 ```
 
+## WSL notes
+
 Default wizard answers on Windows + WSL are context-aware:
 
 - Local Windows path: Remote WSL launch `No`
 - WSL UNC path (`\\wsl$\...`): Remote WSL launch `Yes`
 - Codex run in WSL: prompted only when Remote WSL launch is `Yes` (default `Yes`)
 - Distro selection is skipped when the target path already identifies the distro (for example `\\wsl$\Ubuntu-24.04\...`); otherwise the default is the Windows default distro
-- Ignore Codex chat sessions in gitignore: `No`
+- Track Codex session history in git: `No`
 
 If your target is under `\\wsl$\...`, keep Remote WSL launch enabled to avoid mixed Windows/WSL context warnings in VS Code.
 For WSL-hosted targets, wizard can generate a Windows shortcut `Open <project>.lnk` and lets you choose location (`Project root`, `Desktop`, `Start Menu`, or `Custom path`).
@@ -87,7 +109,12 @@ Remote WSL launches also isolate the VS Code WSL server per project by using `.v
 
 ## Cleanup/Uninstall
 
-To remove generated artifacts safely from one project:
+Preferred cleanup for one project:
+
+1. Run `Codex Session Isolator: Rollback Launcher Changes`.
+2. Answer only the rollback questions that are relevant for that target and environment.
+
+Manual cleanup fallback:
 
 1. Delete launcher files from project root:
    - `vsc_launcher.bat` (Windows) or `vsc_launcher.sh` (Linux/macOS)
@@ -125,16 +152,16 @@ To remove generated artifacts safely from one project:
 ## Troubleshooting
 
 - `PowerShell was not found`:
-  install `pwsh` (PowerShell 7) or `powershell.exe`, then run Initialize again.
+  install `pwsh` (PowerShell 7) or `powershell.exe`, then run `Setup Launcher` again.
 - `Launcher file not found in target root`:
-  run `Initialize Launcher` first (or the one-click setup command if available).
+  run `Setup Launcher` first.
 - WSL prompts/options are missing:
   run `wsl --status`; if unavailable, use local mode or install/configure WSL.
 - Permission/write errors:
   check folder write access and rerun. Existing managed files are backed up under `.vsc_launcher/backups/`.
 - Always check logs:
   1. VS Code Output channel: `Codex Session Isolator`
-  2. Project logs: `.vsc_launcher/logs`
+  2. Project logs: `.vsc_launcher/logs` (`launcher-*.log`, wizard logs, and best-effort `extension-YYYYMMDD.log` breadcrumbs when the logs directory already exists)
 
 ## Source
 

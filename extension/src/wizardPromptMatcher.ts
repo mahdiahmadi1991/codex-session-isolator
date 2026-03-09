@@ -6,7 +6,7 @@ export type WizardPromptId =
   | "createWindowsShortcut"
   | "windowsShortcutLocationSelection"
   | "windowsShortcutCustomPath"
-  | "ignoreSessions";
+  | "trackSessionHistory";
 
 export type WizardPromptAnswers = Partial<Record<WizardPromptId, string>>;
 
@@ -177,8 +177,11 @@ function detectPrompt(
     return { kind: "known", promptId: "windowsShortcutCustomPath" };
   }
 
-  if (isKnownPrompt(normalized, "ignore codex chat sessions in gitignore?")) {
-    return { kind: "known", promptId: "ignoreSessions" };
+  if (
+    isKnownPrompt(normalized, "track codex session history in git?") ||
+    isKnownPrompt(normalized, "ignore codex chat sessions in gitignore?")
+  ) {
+    return { kind: "known", promptId: "trackSessionHistory" };
   }
 
   if (SELECT_DEFAULT_PATTERN.test(line)) {

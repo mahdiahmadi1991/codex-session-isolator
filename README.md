@@ -5,9 +5,17 @@
 [![CI](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/ci.yml)
 [![Security](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml/badge.svg)](https://github.com/mahdiahmadi1991/codex-session-isolator/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/mahdiahmadi1991/codex-session-isolator)](https://github.com/mahdiahmadi1991/codex-session-isolator/releases)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC?logo=visualstudiocode)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/github/license/mahdiahmadi1991/codex-session-isolator)](LICENSE)
 
 Codex Session Isolator gives each code environment its own Codex session state.
+
+Why trust this project:
+
+- local-first behavior only
+- no telemetry or remote upload path
+- project-scoped generated artifacts
+- validated CI coverage on Windows, Linux, and macOS, plus manual WSL-backed validation
 
 When launched through this tool, `CODEX_HOME` is set to:
 
@@ -41,6 +49,12 @@ Practical effect:
 - Keeps per-project Codex state isolated.
 - Supports both workspace files and plain folders (no workspace required).
 - Includes an interactive launcher wizard for generating project-specific launchers.
+
+## Validation Status
+
+- Tested in automated CI on Windows, Linux, and macOS.
+- Manually validated on WSL-backed project targets during launcher and rollback development.
+- Any platform or VS Code/WSL combination not covered by the current CI matrix or manual validation should be treated as best-effort until explicitly verified in a future release.
 
 ## Project Structure
 
@@ -88,6 +102,7 @@ Helper options:
 
 - `--help` show usage
 - `--debug` generate launcher with logging enabled by default
+- `--rollback` roll back launcher-managed changes for the target project
 - `--target <path>` pass target explicitly
 
 Direct wizard (advanced):
@@ -103,7 +118,7 @@ The wizard asks for:
 - Remote WSL mode
 - whether Codex should run in WSL for this project (only when Remote WSL mode is `Yes`)
 - whether to create an extra Windows Desktop shortcut copy (only for WSL-hosted targets)
-- whether Codex chat sessions should be git-ignored
+- whether Codex session history should be tracked in git (`config.toml` always stays trackable)
 
 Wizard defaults:
 
@@ -117,9 +132,10 @@ Wizard defaults:
   - WSL UNC path (`\\wsl$\...`): `Launch VS Code in Remote WSL mode = Yes`
   - `Set Codex to run in WSL for this project = Yes`
   - WSL distro default = your Windows default distro (`wsl --status`)
-  - `Ignore Codex chat sessions in gitignore = No`
+  - `Track Codex session history in git = No`
 - Logging is disabled by default and enabled only when running wizard with `--debug`.
 - On Windows, it generates one executable launcher file in target root (`vsc_launcher.bat`) and stores metadata in `.vsc_launcher/`.
+- Wizard also writes `.vsc_launcher/rollback.manifest.json` so the latest setup can be rolled back safely later.
 - For WSL-hosted targets (WSL UNC from Windows, or wizard executed inside WSL), wizard can generate a Windows shortcut named `Open <project>.lnk`.
 - Wizard asks for shortcut location when enabled: `Project root`, `Desktop`, `Start Menu`, or `Custom path`.
 - Shortcut execution now uses direct `wsl.exe` arguments (no encoded PowerShell command), reducing antivirus false-positive risk.
@@ -138,8 +154,8 @@ The extension adds in-editor commands for wizard UX and launcher operations:
 - Primary Command Palette commands:
 - `Codex Session Isolator: Setup Launcher`
 - `Codex Session Isolator: Reopen With Launcher`
+- `Codex Session Isolator: Rollback Launcher Changes`
 - Utility commands (available for direct use but hidden from the default Command Palette list):
-- `Codex Session Isolator: Initialize Launcher`
 - `Codex Session Isolator: Open Launcher Logs`
 - `Codex Session Isolator: Open Launcher Config`
 
@@ -159,13 +175,18 @@ Quick start (Marketplace install -> setup -> verify):
 
 1. Install `2ma.codex-session-isolator` from VS Code Marketplace.
 2. Open your project in VS Code.
-3. Setup launcher:
-   - If available in your installed version, run `Codex Session Isolator: Setup Launcher`.
-   - Otherwise run `Codex Session Isolator: Initialize Launcher`, then confirm the final reopen prompt for the current project.
+3. Run `Codex Session Isolator: Setup Launcher`.
 4. Verify in terminal:
    - Windows PowerShell: `echo $env:CODEX_HOME`
    - bash/zsh: `echo "$CODEX_HOME"`
 5. Expected value: `<project-root>/.codex` (or Linux-equivalent path in WSL/Unix mode).
+
+Rollback:
+
+1. Run `Codex Session Isolator: Rollback Launcher Changes`.
+2. Choose `Current project` or `Another project`.
+3. If the project has removable `.codex` runtime data, the extension asks whether to remove it too. The default answer is `No`, and `.codex/config.toml` is always preserved.
+4. If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, the flow stops by default and asks whether to continue with permanent deletion.
 
 Install pre-release build:
 
@@ -253,14 +274,14 @@ To remove generated launcher artifacts safely from a project:
 - Wizard fails immediately:
   ensure PowerShell is installed (`pwsh` or `powershell.exe`), then retry.
 - Reopen fails with launcher missing:
-  run Initialize first (or one-click setup command if your version provides it).
+  run `Setup Launcher` first.
 - WSL options are missing:
   verify `wsl --status`; if unavailable, use local mode or install/configure WSL.
 - Permission/write errors:
   check folder write access. Backup copies for managed overwrites are under `.vsc_launcher/backups/`.
 - Where to inspect logs:
   1. VS Code Output channel: `Codex Session Isolator`
-  2. Project logs: `.vsc_launcher/logs`
+  2. Project logs: `.vsc_launcher/logs` (`launcher-*.log`, wizard logs, and best-effort `extension-YYYYMMDD.log` breadcrumbs when the logs directory already exists)
 
 ## Documentation
 
@@ -282,7 +303,7 @@ To remove generated launcher artifacts safely from a project:
 - Project scripts are local-first and do not include built-in telemetry uploads.
 - Before overwriting managed files, safety backups are created under:
   - `<target>/.vsc_launcher/backups/<timestamp-pid>/`
-- Extension initialization requires trusted workspace and explicit confirmation by default.
+- Extension operations require trusted workspace, and setup/rollback ask for explicit confirmation where applicable.
 - Marketplace CI generates VSIX checksum files for verification.
 - Security CI workflow runs dependency review, secret scan, script syntax validation, npm audit, and CodeQL analysis.
 
