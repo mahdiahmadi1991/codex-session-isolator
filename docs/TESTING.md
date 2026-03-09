@@ -32,6 +32,7 @@ Expected:
 - Wizard reuses saved defaults where possible, so some prompts may be skipped entirely on repeat runs.
 - It creates/replaces one launcher file in target directory plus `.vsc_launcher` metadata.
 - If `.gitignore` already exists, it updates managed `.gitignore` block.
+- It writes `.vsc_launcher/rollback.manifest.json` for the latest setup so rollback can work safely.
 - It writes `.vscode/settings.json` with:
   - `chatgpt.openOnStartup = true`
   - `chatgpt.runCodexInWindowsSubsystemForLinux = <selected>`
@@ -193,6 +194,21 @@ Expected:
 - `.vsc_launcher/logs` includes launcher and wizard run logs with execution details.
 - For WSL-hosted targets, the generated launcher uses `.vsc_launcher/config.env` and the launcher script itself contains the detached `code` dispatch (`setsid`/`nohup`) plus a short post-dispatch wait.
 
+## 10.1) Extension flow logging
+
+Steps:
+
+1. Run `Codex Session Isolator: Setup Launcher` on a project.
+2. Run `Codex Session Isolator: Reopen With Launcher`.
+3. Run `Codex Session Isolator: Rollback Launcher Changes` on a project that has rollback metadata.
+
+Expected:
+
+- VS Code Output channel `Codex Session Isolator` shows the flow decisions and failures.
+- If `.vsc_launcher/logs` exists for the target, extension operations append best-effort breadcrumbs to `extension-YYYYMMDD.log`.
+- The extension log includes operation type, target scope, key outcomes, and fallback decisions without blocking the main action.
+- When the target has removable `.codex` runtime data, rollback also asks whether to remove it; the default answer is `No`.
+
 ## 11) Wizard default reuse
 
 Steps:
@@ -218,5 +234,26 @@ Expected:
 - A new timestamped backup session folder exists.
 - Backup session contains previous copies of managed files such as:
   - `.vscode/settings.json`
+
+## 13) Rollback safety
+
+Commands:
+
+```powershell
+.\tools\vsc-launcher.ps1 "C:\path\to\repo" --rollback
+```
+
+```bash
+./tools/vsc-launcher.sh "/path/to/repo" --rollback
+```
+
+Expected:
+
+- Rollback succeeds only when `.vsc_launcher/rollback.manifest.json` exists for the target.
+- Generated launcher files and launcher-owned metadata are removed from the project.
+- `.vscode/settings.json`, workspace settings, and the managed `.gitignore` block are cleaned surgically without removing unrelated user edits.
+- If the latest setup backed up a pre-existing managed file, rollback restores that backup instead of deleting blindly.
+- If the optional `.codex` cleanup is enabled, rollback preserves `.codex/config.toml` and removes the rest of `.codex/`.
+- If native Trash/Recycle Bin is unavailable for a launcher-owned path or opted-in `.codex` runtime data, rollback stops by default and asks whether to continue with permanent deletion.
   - `.gitignore`
   - launcher/config files when they existed before overwrite.

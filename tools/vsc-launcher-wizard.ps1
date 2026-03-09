@@ -1,6 +1,10 @@
 param(
   [string]$TargetPath,
-  [switch]$DebugMode
+  [switch]$DebugMode,
+  [switch]$Rollback,
+  [switch]$RollbackRemoveCodexRuntimeData,
+  [ValidateSet("Prompt", "Stop", "DeletePermanently")]
+  [string]$RollbackDeleteBehavior = "Prompt"
 )
 
 $ErrorActionPreference = "Stop"
@@ -811,6 +815,52 @@ function Ensure-JsonObjectFile {
   return [ordered]@{}
 }
 
+function Get-PreferredLineEnding {
+  param([string]$Text)
+
+  if ($Text -match "`r`n") {
+    return "`r`n"
+  }
+
+  return "`n"
+}
+
+function Write-Utf8NoBomText {
+  param(
+    [string]$Path,
+    [string]$Content,
+    [string]$ReferenceText = ""
+  )
+
+  $lineEnding = Get-PreferredLineEnding -Text $ReferenceText
+  $normalized = if ($null -eq $Content) { "" } else { [string]$Content }
+  $normalized = [regex]::Replace($normalized, "`r`n|`r|`n", $lineEnding)
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $normalized, $utf8NoBom)
+}
+
+function Copy-HashtableDeep {
+  param($InputObject)
+
+  if ($null -eq $InputObject) {
+    return $null
+  }
+
+  $roundTripped = $InputObject | ConvertTo-Json -Depth 50 | ConvertFrom-Json
+  return Convert-ToHashtable -InputObject $roundTripped
+}
+
+function Test-StructuredDataEquivalent {
+  param(
+    $Left,
+    $Right
+  )
+
+  $leftJson = $Left | ConvertTo-Json -Depth 50 -Compress
+  $rightJson = $Right | ConvertTo-Json -Depth 50 -Compress
+  return $leftJson -eq $rightJson
+}
+
 function Convert-ToHashtable {
   param(
     [Parameter(Mandatory = $true)]
@@ -890,6 +940,1093 @@ function Ensure-Directory {
   return $true
 }
 
+function Resolve-FullPathSafe {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ""
+  }
+
+  if (Test-Path -LiteralPath $Path -PathType Any) {
+    return [IO.Path]::GetFullPath((Get-Item -LiteralPath $Path -Force).FullName)
+  }
+
+  return [IO.Path]::GetFullPath($Path)
+}
+
+function Test-PathUnderRoot {
+  param(
+    [string]$RootPath,
+    [string]$TargetPath
+  )
+
+  if ([string]::IsNullOrWhiteSpace($RootPath) -or [string]::IsNullOrWhiteSpace($TargetPath)) {
+    return $false
+  }
+
+  $fullRoot = Resolve-FullPathSafe -Path $RootPath
+  $fullTarget = Resolve-FullPathSafe -Path $TargetPath
+  if ([string]::IsNullOrWhiteSpace($fullRoot) -or [string]::IsNullOrWhiteSpace($fullTarget)) {
+    return $false
+  }
+
+  $comparison = if ($env:OS -eq "Windows_NT") {
+    [StringComparison]::OrdinalIgnoreCase
+  } else {
+    [StringComparison]::Ordinal
+  }
+
+  if ($fullTarget.Equals($fullRoot, $comparison)) {
+    return $true
+  }
+
+  $rootWithSeparator = $fullRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+  return $fullTarget.StartsWith($rootWithSeparator, $comparison)
+}
+
+function Get-BackupRecordForPath {
+  param([string]$Path)
+
+  $fullPath = Resolve-FullPathSafe -Path $Path
+  if ([string]::IsNullOrWhiteSpace($fullPath)) {
+    return $null
+  }
+
+  if ($script:BackupPathIndex.ContainsKey($fullPath)) {
+    return $script:BackupPathIndex[$fullPath]
+  }
+
+  return $null
+}
+
+function Convert-ToPortableRelativePath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return $Path
+  }
+
+  return ($Path -replace '\\', '/')
+}
+
+function New-ManagedPathRecord {
+  param(
+    [string]$Path,
+    [string]$RootPath,
+    [string]$Kind = "file",
+    [Nullable[bool]]$ExistedBeforeSetup = $null,
+    [Nullable[bool]]$ExistsAfterSetup = $null
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return $null
+  }
+
+  $fullPath = Resolve-FullPathSafe -Path $Path
+  $backupRecord = Get-BackupRecordForPath -Path $Path
+  $pathUnderRoot = Test-PathUnderRoot -RootPath $RootPath -TargetPath $fullPath
+  $projectRelativePath = $null
+  if ($pathUnderRoot) {
+    $projectRelativePath = Convert-ToPortableRelativePath -Path (Get-RelativePathSafe -BasePath $RootPath -TargetPath $fullPath)
+  }
+
+  $existsAfter = if ($null -ne $ExistsAfterSetup) {
+    [bool]$ExistsAfterSetup
+  } else {
+    Test-Path -LiteralPath $Path -PathType Any
+  }
+
+  $existedBefore = if ($null -ne $ExistedBeforeSetup) {
+    [bool]$ExistedBeforeSetup
+  } else {
+    ($null -ne $backupRecord)
+  }
+
+  return [ordered]@{
+    kind = $Kind
+    pathScope = if ($pathUnderRoot) { "project" } else { "external" }
+    projectRelativePath = if ($pathUnderRoot) { $projectRelativePath } else { $null }
+    absolutePath = if ($pathUnderRoot) { $null } else { $fullPath }
+    existedBeforeSetup = $existedBefore
+    existsAfterSetup = $existsAfter
+    hadBackup = ($null -ne $backupRecord)
+    backupRelativePath = if ($null -ne $backupRecord) { $backupRecord.BackupRelativePath } else { $null }
+  }
+}
+
+function Merge-Hashtable {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.Collections.IDictionary]$Base,
+    [Parameter(Mandatory = $true)]
+    [System.Collections.IDictionary]$Additional
+  )
+
+  $merged = [ordered]@{}
+  foreach ($key in $Base.Keys) {
+    $merged[$key] = $Base[$key]
+  }
+  foreach ($key in $Additional.Keys) {
+    $merged[$key] = $Additional[$key]
+  }
+  return $merged
+}
+
+function Save-RollbackManifest {
+  param(
+    [string]$RootPath,
+    [string]$MetadataDirName,
+    [System.Collections.IDictionary]$Manifest
+  )
+
+  $metadataDirPath = Join-Path $RootPath $MetadataDirName
+  $manifestPath = Join-Path $metadataDirPath "rollback.manifest.json"
+  $null = Ensure-Directory -Path $metadataDirPath
+  Backup-PathIfExists -Path $manifestPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
+  Set-Content -LiteralPath $manifestPath -Value ($Manifest | ConvertTo-Json -Depth 50)
+  return $manifestPath
+}
+
+function Resolve-ManifestProjectPath {
+  param(
+    [string]$RootPath,
+    [string]$PortableRelativePath
+  )
+
+  if ([string]::IsNullOrWhiteSpace($PortableRelativePath)) {
+    return ""
+  }
+
+  $nativeRelativePath = $PortableRelativePath -replace '/', [IO.Path]::DirectorySeparatorChar
+  return Join-Path $RootPath $nativeRelativePath
+}
+
+function Get-ManifestRecordPath {
+  param(
+    [string]$RootPath,
+    $Record
+  )
+
+  if ($null -eq $Record) {
+    return ""
+  }
+
+  if ($Record.pathScope -eq "project") {
+    return Resolve-ManifestProjectPath -RootPath $RootPath -PortableRelativePath ([string]$Record.projectRelativePath)
+  }
+
+  return [string]$Record.absolutePath
+}
+
+function Get-ManifestRecordBackupPath {
+  param(
+    [string]$RootPath,
+    $Manifest,
+    $Record
+  )
+
+  if ($null -eq $Record -or -not [bool]$Record.hadBackup) {
+    return ""
+  }
+
+  $backupRootRelativePath = [string]$Manifest.latestBackupProjectRelativePath
+  $backupRelativePath = [string]$Record.backupRelativePath
+  if ([string]::IsNullOrWhiteSpace($backupRootRelativePath) -or [string]::IsNullOrWhiteSpace($backupRelativePath)) {
+    return ""
+  }
+
+  $backupRootPath = Resolve-ManifestProjectPath -RootPath $RootPath -PortableRelativePath $backupRootRelativePath
+  return Resolve-ManifestProjectPath -RootPath $backupRootPath -PortableRelativePath $backupRelativePath
+}
+
+function Read-JsonObjectStrict {
+  param(
+    [string]$Path,
+    [string]$Description
+  )
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "$Description not found: $Path"
+  }
+
+  try {
+    $obj = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "$Description is not valid JSON and cannot be rolled back safely: $Path"
+  }
+
+  if ($obj -is [System.Collections.IDictionary]) {
+    return (Convert-ToHashtable -InputObject $obj)
+  }
+
+  return (Convert-ToHashtable -InputObject $obj)
+}
+
+function Test-IsMacOsPlatform {
+  return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)
+}
+
+function Get-UniqueSiblingPath {
+  param([string]$CandidatePath)
+
+  if (-not (Test-Path -LiteralPath $CandidatePath -PathType Any)) {
+    return $CandidatePath
+  }
+
+  $parent = Split-Path -Parent $CandidatePath
+  $leaf = Split-Path -Leaf $CandidatePath
+  $name = [IO.Path]::GetFileNameWithoutExtension($leaf)
+  $extension = [IO.Path]::GetExtension($leaf)
+  $counter = 1
+  while ($true) {
+    $nextLeaf = "{0}-{1}{2}" -f $name, $counter, $extension
+    $nextPath = Join-Path $parent $nextLeaf
+    if (-not (Test-Path -LiteralPath $nextPath -PathType Any)) {
+      return $nextPath
+    }
+    $counter++
+  }
+}
+
+function Test-CanUseNativeTrashForPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Any)) {
+    return $false
+  }
+
+  if ($env:OS -eq "Windows_NT") {
+    if (Test-IsWslUncPath -Path $Path) {
+      return $false
+    }
+
+    if ($Path -match '^[\\]{2}') {
+      return $false
+    }
+
+    return $true
+  }
+
+  if (Test-IsMacOsPlatform) {
+    return (-not [string]::IsNullOrWhiteSpace($HOME))
+  }
+
+  return (-not [string]::IsNullOrWhiteSpace($HOME))
+}
+
+function Move-PathToWindowsRecycleBin {
+  param([string]$Path)
+
+  Add-Type -AssemblyName Microsoft.VisualBasic
+  $item = Get-Item -LiteralPath $Path -Force
+  if ($item.PSIsContainer) {
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+      $Path,
+      [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+      [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+    )
+    return
+  }
+
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+    $Path,
+    [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+    [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+  )
+}
+
+function Move-PathToMacTrash {
+  param([string]$Path)
+
+  $trashDir = Join-Path $HOME ".Trash"
+  $null = Ensure-Directory -Path $trashDir
+  $destination = Get-UniqueSiblingPath -CandidatePath (Join-Path $trashDir (Split-Path -Leaf $Path))
+  Move-Item -LiteralPath $Path -Destination $destination -Force
+}
+
+function Get-LinuxTrashInfoPathValue {
+  param([string]$OriginalPath)
+
+  $portablePath = Convert-ToPortableRelativePath -Path $OriginalPath
+  $escapedPath = $portablePath.Replace('%', '%25')
+  $escapedPath = $escapedPath.Replace("`r", '%0D')
+  $escapedPath = $escapedPath.Replace("`n", '%0A')
+  return $escapedPath
+}
+
+function Move-PathToLinuxTrash {
+  param([string]$Path)
+
+  $xdgDataHome = if (-not [string]::IsNullOrWhiteSpace($env:XDG_DATA_HOME)) {
+    $env:XDG_DATA_HOME
+  } else {
+    Join-Path $HOME ".local/share"
+  }
+
+  $trashRoot = Join-Path $xdgDataHome "Trash"
+  $trashFilesDir = Join-Path $trashRoot "files"
+  $trashInfoDir = Join-Path $trashRoot "info"
+  $null = Ensure-Directory -Path $trashFilesDir
+  $null = Ensure-Directory -Path $trashInfoDir
+
+  $leaf = Split-Path -Leaf $Path
+  $trashTarget = Get-UniqueSiblingPath -CandidatePath (Join-Path $trashFilesDir $leaf)
+  $trashInfoTarget = Join-Path $trashInfoDir ((Split-Path -Leaf $trashTarget) + ".trashinfo")
+  $trashInfoTarget = Get-UniqueSiblingPath -CandidatePath $trashInfoTarget
+
+  Move-Item -LiteralPath $Path -Destination $trashTarget -Force
+
+  $trashInfo = @(
+    "[Trash Info]"
+    ("Path={0}" -f (Get-LinuxTrashInfoPathValue -OriginalPath (Resolve-FullPathSafe -Path $Path)))
+    ("DeletionDate={0}" -f (Get-Date -Format "yyyy-MM-ddTHH:mm:ss"))
+    ""
+  ) -join "`n"
+  [System.IO.File]::WriteAllText($trashInfoTarget, $trashInfo, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Move-PathToNativeTrash {
+  param([string]$Path)
+
+  if ($env:OS -eq "Windows_NT") {
+    Move-PathToWindowsRecycleBin -Path $Path
+    return
+  }
+
+  if (Test-IsMacOsPlatform) {
+    Move-PathToMacTrash -Path $Path
+    return
+  }
+
+  Move-PathToLinuxTrash -Path $Path
+}
+
+function Remove-PathPermanently {
+  param([string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Any)) {
+    return
+  }
+
+  $isIgnorableMissingPathError = {
+    param($Exception)
+
+    if ($null -eq $Exception) {
+      return $false
+    }
+
+    $message = [string]$Exception.Message
+    if ($message -match "Could not find a part of the path") {
+      return $true
+    }
+
+    if ($message -match "Cannot find path") {
+      return $true
+    }
+
+    if ($message -match "because it does not exist") {
+      return $true
+    }
+
+    return $false
+  }
+
+  try {
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+    return
+  } catch {
+    if (-not (Test-Path -LiteralPath $Path -PathType Any)) {
+      return
+    }
+  }
+
+  try {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (-not $item.PSIsContainer) {
+      [System.IO.File]::Delete($Path)
+      return
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+    foreach ($child in $children) {
+      Remove-PathPermanently -Path $child.FullName
+    }
+
+    if (Test-Path -LiteralPath $Path -PathType Any) {
+      $remainingChildren = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+      foreach ($remainingChild in $remainingChildren) {
+        Remove-PathPermanently -Path $remainingChild.FullName
+      }
+
+      if (Test-Path -LiteralPath $Path -PathType Any) {
+        [System.IO.Directory]::Delete($Path, $true)
+      }
+    }
+  } catch {
+    if (-not (Test-Path -LiteralPath $Path -PathType Any)) {
+      return
+    }
+
+    if (& $isIgnorableMissingPathError $_.Exception) {
+      return
+    }
+
+    throw
+  }
+}
+
+function Ensure-ParentDirectoryForPath {
+  param([string]$Path)
+
+  $parent = Split-Path -Parent $Path
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    $null = Ensure-Directory -Path $parent
+  }
+}
+
+function Restore-PathFromBackup {
+  param(
+    [string]$BackupPath,
+    [string]$TargetPath
+  )
+
+  if ([string]::IsNullOrWhiteSpace($BackupPath) -or -not (Test-Path -LiteralPath $BackupPath -PathType Any)) {
+    throw "Required backup source is missing: $BackupPath"
+  }
+
+  Ensure-ParentDirectoryForPath -Path $TargetPath
+  $backupItem = Get-Item -LiteralPath $BackupPath -Force
+  if ($backupItem.PSIsContainer) {
+    Copy-Item -LiteralPath $BackupPath -Destination $TargetPath -Recurse -Force
+  } else {
+    Copy-Item -LiteralPath $BackupPath -Destination $TargetPath -Force
+  }
+}
+
+function Remove-ManagedGitIgnoreBlockCurrent {
+  param($Record, [string]$Path)
+
+  if ($null -eq $Record -or [string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    return $false
+  }
+
+  $startMarker = [string]$Record.startMarker
+  $endMarker = [string]$Record.endMarker
+  if ([string]::IsNullOrWhiteSpace($startMarker) -or [string]::IsNullOrWhiteSpace($endMarker)) {
+    throw "Rollback manifest is missing managed .gitignore markers."
+  }
+
+  $current = Get-Content -LiteralPath $Path -Raw
+  $pattern = "(?ms)(?:\r?\n)?^" + [regex]::Escape($startMarker) + ".*?^" + [regex]::Escape($endMarker) + "\s*"
+  if ($current -notmatch $pattern) {
+    return $false
+  }
+
+  $updated = [regex]::Replace($current, $pattern, "")
+  Write-Utf8NoBomText -Path $Path -Content $updated -ReferenceText $current
+  return $true
+}
+
+function Get-ManagedKeyBackupValue {
+  param(
+    [hashtable]$BackupObject,
+    [string]$KeyName
+  )
+
+  if ($null -eq $BackupObject) {
+    return @{
+      Exists = $false
+      Value = $null
+    }
+  }
+
+  if ($BackupObject.Contains($KeyName)) {
+    return @{
+      Exists = $true
+      Value = $BackupObject[$KeyName]
+    }
+  }
+
+  return @{
+    Exists = $false
+    Value = $null
+  }
+}
+
+function Invoke-RollbackVscodeSettings {
+  param(
+    [string]$RootPath,
+    $Manifest,
+    $Record,
+    [ref]$Warnings,
+    [ref]$RemovalRequests
+  )
+
+  $path = Get-ManifestRecordPath -RootPath $RootPath -Record $Record
+  if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return
+  }
+
+  $rawCurrentText = Get-Content -LiteralPath $path -Raw
+  $current = Read-JsonObjectStrict -Path $path -Description "Current VS Code settings file"
+  $backup = $null
+  $backupPath = ""
+  if ([bool]$Record.hadBackup) {
+    $backupPath = Get-ManifestRecordBackupPath -RootPath $RootPath -Manifest $Manifest -Record $Record
+    $backup = Read-JsonObjectStrict -Path $backupPath -Description "Backed-up VS Code settings file"
+  }
+
+  $normalizedCurrent = Copy-HashtableDeep -InputObject $current
+
+  foreach ($prop in $Record.managedKeys.PSObject.Properties) {
+    $keyName = $prop.Name
+    $keyRecord = $prop.Value
+    if (-not $current.Contains($keyName)) {
+      continue
+    }
+
+    $currentValue = $current[$keyName]
+    if ($currentValue -ne $keyRecord.appliedValue) {
+      $Warnings.Value += ("Skipped VS Code setting rollback for '{0}' because the user changed it after setup." -f $keyName)
+      continue
+    }
+
+    if ([bool]$keyRecord.existedBeforeSetup) {
+      $backupValue = Get-ManagedKeyBackupValue -BackupObject $backup -KeyName $keyName
+      if (-not [bool]$backupValue.Exists) {
+        throw "Rollback metadata expects a previous value for '$keyName' in VS Code settings, but the backup does not contain it."
+      }
+      $current[$keyName] = $backupValue.Value
+      if ($null -ne $normalizedCurrent) {
+        $normalizedCurrent[$keyName] = $backupValue.Value
+      }
+    } else {
+      $current.Remove($keyName)
+      if ($null -ne $normalizedCurrent -and $normalizedCurrent.Contains($keyName)) {
+        $normalizedCurrent.Remove($keyName)
+      }
+    }
+  }
+
+  if ($current.Count -eq 0 -and -not [bool]$Record.existedBeforeSetup) {
+    $RemovalRequests.Value += @{
+      Path = $path
+      Reason = "VS Code settings file created by setup"
+    }
+    return
+  }
+
+  if ([bool]$Record.hadBackup -and -not [string]::IsNullOrWhiteSpace($backupPath) -and $null -ne $backup -and (Test-StructuredDataEquivalent -Left $normalizedCurrent -Right $backup)) {
+    Copy-Item -LiteralPath $backupPath -Destination $path -Force
+    return
+  }
+
+  Write-Utf8NoBomText -Path $path -Content ($current | ConvertTo-Json -Depth 50) -ReferenceText $rawCurrentText
+}
+
+function Invoke-RollbackWorkspaceSettings {
+  param(
+    [string]$RootPath,
+    $Manifest,
+    $Record,
+    [ref]$Warnings
+  )
+
+  $path = Get-ManifestRecordPath -RootPath $RootPath -Record $Record
+  if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return
+  }
+
+  $rawCurrentText = Get-Content -LiteralPath $path -Raw
+  $current = Read-JsonObjectStrict -Path $path -Description "Current workspace file"
+  $currentSettings = if ($current.Contains("settings") -and $current["settings"] -is [System.Collections.IDictionary]) {
+    Convert-ToHashtable -InputObject $current["settings"]
+  } elseif ($current.Contains("settings") -and $null -ne $current["settings"]) {
+    Convert-ToHashtable -InputObject $current["settings"]
+  } else {
+    [ordered]@{}
+  }
+
+  $backup = $null
+  $backupSettings = $null
+  $backupPath = ""
+  if ([bool]$Record.hadBackup) {
+    $backupPath = Get-ManifestRecordBackupPath -RootPath $RootPath -Manifest $Manifest -Record $Record
+    $backup = Read-JsonObjectStrict -Path $backupPath -Description "Backed-up workspace file"
+    if ($backup.Contains("settings") -and $null -ne $backup["settings"]) {
+      $backupSettings = if ($backup["settings"] -is [System.Collections.IDictionary]) {
+        Convert-ToHashtable -InputObject $backup["settings"]
+      } else {
+        Convert-ToHashtable -InputObject $backup["settings"]
+      }
+    } else {
+      $backupSettings = [ordered]@{}
+    }
+  }
+
+  $normalizedCurrent = Copy-HashtableDeep -InputObject $current
+  $normalizedCurrentSettings = if ($null -ne $normalizedCurrent -and $normalizedCurrent.Contains("settings") -and $null -ne $normalizedCurrent["settings"]) {
+    Convert-ToHashtable -InputObject $normalizedCurrent["settings"]
+  } else {
+    [ordered]@{}
+  }
+
+  foreach ($prop in $Record.managedKeys.PSObject.Properties) {
+    $keyName = $prop.Name
+    $keyRecord = $prop.Value
+    if (-not $currentSettings.Contains($keyName)) {
+      continue
+    }
+
+    $currentValue = $currentSettings[$keyName]
+    if ($currentValue -ne $keyRecord.appliedValue) {
+      $Warnings.Value += ("Skipped workspace setting rollback for '{0}' because the user changed it after setup." -f $keyName)
+      continue
+    }
+
+    if ([bool]$keyRecord.existedBeforeSetup) {
+      $backupValue = Get-ManagedKeyBackupValue -BackupObject $backupSettings -KeyName $keyName
+      if (-not [bool]$backupValue.Exists) {
+        throw "Rollback metadata expects a previous workspace value for '$keyName', but the backup does not contain it."
+      }
+      $currentSettings[$keyName] = $backupValue.Value
+      $normalizedCurrentSettings[$keyName] = $backupValue.Value
+    } else {
+      $currentSettings.Remove($keyName)
+      if ($normalizedCurrentSettings.Contains($keyName)) {
+        $normalizedCurrentSettings.Remove($keyName)
+      }
+    }
+  }
+
+  if ($currentSettings.Count -eq 0) {
+    $current.Remove("settings")
+  } else {
+    $current["settings"] = $currentSettings
+  }
+
+  if ($null -ne $normalizedCurrent) {
+    if ($normalizedCurrentSettings.Count -eq 0) {
+      $normalizedCurrent.Remove("settings")
+    } else {
+      $normalizedCurrent["settings"] = $normalizedCurrentSettings
+    }
+  }
+
+  if ([bool]$Record.hadBackup -and -not [string]::IsNullOrWhiteSpace($backupPath) -and $null -ne $backup -and (Test-StructuredDataEquivalent -Left $normalizedCurrent -Right $backup)) {
+    Copy-Item -LiteralPath $backupPath -Destination $path -Force
+    return
+  }
+
+  Write-Utf8NoBomText -Path $path -Content ($current | ConvertTo-Json -Depth 50) -ReferenceText $rawCurrentText
+}
+
+function Resolve-RollbackFallbackChoice {
+  param(
+    [hashtable[]]$UnsupportedPaths,
+    [string]$DeleteBehavior = "Prompt"
+  )
+
+  if ($UnsupportedPaths.Count -eq 0) {
+    return $false
+  }
+
+  switch ($DeleteBehavior) {
+    "Stop" {
+      throw "Native Trash/Recycle Bin is not available for one or more required rollback paths."
+    }
+    "DeletePermanently" {
+      return $true
+    }
+  }
+
+  Write-Host ""
+  Write-Host "Native Trash/Recycle Bin is not available for one or more rollback paths."
+  foreach ($item in $UnsupportedPaths) {
+    Write-Host ("- {0}" -f $item.Path)
+  }
+  $choice = Read-ChoiceIndex -Title "How do you want to continue?" -Options @("Stop rollback", "Delete permanently") -DefaultIndex 0
+  if ($choice -eq 0) {
+    throw "Native Trash/Recycle Bin is not available for one or more required rollback paths."
+  }
+
+  return $true
+}
+
+function Invoke-RollbackRemovalPreflight {
+  param(
+    [hashtable[]]$RemovalRequests,
+    [ref]$AllowPermanentDeleteFallback,
+    [string]$DeleteBehavior = "Prompt"
+  )
+
+  $existingRequests = @($RemovalRequests | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Path) -and (Test-Path -LiteralPath $_.Path -PathType Any) })
+  if ($existingRequests.Count -eq 0) {
+    return
+  }
+
+  $unsupported = @($existingRequests | Where-Object { -not (Test-CanUseNativeTrashForPath -Path $_.Path) })
+  if ($unsupported.Count -gt 0 -and $null -eq $AllowPermanentDeleteFallback.Value) {
+    $AllowPermanentDeleteFallback.Value = Resolve-RollbackFallbackChoice -UnsupportedPaths $unsupported -DeleteBehavior $DeleteBehavior
+  }
+}
+
+function Invoke-RollbackRemoval {
+  param(
+    [hashtable[]]$RemovalRequests,
+    [ref]$Summary,
+    [ref]$AllowPermanentDeleteFallback,
+    [string]$DeleteBehavior = "Prompt"
+  )
+
+  $existingRequests = @($RemovalRequests | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Path) -and (Test-Path -LiteralPath $_.Path -PathType Any) })
+  if ($existingRequests.Count -eq 0) {
+    return
+  }
+
+  $unsupported = @($existingRequests | Where-Object { -not (Test-CanUseNativeTrashForPath -Path $_.Path) })
+  if ($unsupported.Count -gt 0 -and $null -eq $AllowPermanentDeleteFallback.Value) {
+    $AllowPermanentDeleteFallback.Value = Resolve-RollbackFallbackChoice -UnsupportedPaths $unsupported -DeleteBehavior $DeleteBehavior
+  }
+
+  foreach ($request in $existingRequests) {
+    $canTrash = Test-CanUseNativeTrashForPath -Path $request.Path
+    if ($canTrash) {
+      Move-PathToNativeTrash -Path $request.Path
+      $Summary.Value.Trashed += 1
+      continue
+    }
+
+    if (-not [bool]$AllowPermanentDeleteFallback.Value) {
+      throw "Native Trash/Recycle Bin is not available for required rollback path: $($request.Path)"
+    }
+
+    Remove-PathPermanently -Path $request.Path
+    $Summary.Value.PermanentlyDeleted += 1
+  }
+}
+
+function Get-RollbackManifestContext {
+  param(
+    [string]$RootPath,
+    [string]$MetadataDirName
+  )
+
+  $metadataDirPath = Join-Path $RootPath $MetadataDirName
+  $manifestPath = Join-Path $metadataDirPath "rollback.manifest.json"
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    if (Test-Path -LiteralPath $metadataDirPath -PathType Container) {
+      throw "This project was initialized before rollback metadata existed. Automatic rollback is not available for this target."
+    }
+
+    throw "No launcher-managed rollback metadata found for target: $RootPath"
+  }
+
+  try {
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "Rollback manifest is not valid JSON and cannot be used safely: $manifestPath"
+  }
+
+  if ($manifest.schemaVersion -ne 1) {
+    throw "Rollback manifest schema version '$($manifest.schemaVersion)' is not supported."
+  }
+
+  return @{
+    ManifestPath = $manifestPath
+    MetadataDirPath = $metadataDirPath
+    Manifest = $manifest
+  }
+}
+
+function Get-CodexRuntimeCleanupPlan {
+  param([string]$RootPath)
+
+  $codexDirPath = Join-Path $RootPath ".codex"
+  if (-not (Test-Path -LiteralPath $codexDirPath -PathType Container)) {
+    return @{
+      RemovalRequests = @()
+      RemoveCodexDirectoryAfterCleanup = $false
+    }
+  }
+
+  $removalRequests = @()
+  $configPath = Join-Path $codexDirPath "config.toml"
+  $preserveConfig = Test-Path -LiteralPath $configPath -PathType Leaf
+  $children = @(Get-ChildItem -LiteralPath $codexDirPath -Force -ErrorAction SilentlyContinue)
+  foreach ($child in $children) {
+    if (-not $child.PSIsContainer -and $child.Name -ieq "config.toml") {
+      continue
+    }
+
+    $removalRequests += @{
+      Path = $child.FullName
+      Reason = "Remove project Codex runtime data"
+    }
+  }
+
+  return @{
+    RemovalRequests = $removalRequests
+    RemoveCodexDirectoryAfterCleanup = (($removalRequests.Count -gt 0) -and (-not $preserveConfig))
+  }
+}
+
+function Invoke-RollbackForTarget {
+  param(
+    [string]$RootPath,
+    [string]$MetadataDirName,
+    [bool]$RemoveCodexRuntimeData = $false,
+    [string]$DeleteBehavior = "Prompt"
+  )
+
+  $context = Get-RollbackManifestContext -RootPath $RootPath -MetadataDirName $MetadataDirName
+  $manifest = $context.Manifest
+  $warnings = @()
+  $removalRequests = @()
+  $restoreRequests = @()
+  $allowPermanentDeleteFallback = $null
+  $codexRuntimeCleanupPlan = if ($RemoveCodexRuntimeData) { Get-CodexRuntimeCleanupPlan -RootPath $RootPath } else { $null }
+  $summary = @{
+    Restored = 0
+    Trashed = 0
+    PermanentlyDeleted = 0
+    Edited = 0
+    Warnings = 0
+  }
+
+  $preserveMetadataDirForPreflight = [bool]$manifest.managedFiles.metadataDirectory.existedBeforeSetup
+  foreach ($recordName in @("wizardDefaults", "launcherConfig", "launcherRunner")) {
+    $record = $manifest.managedFiles.$recordName
+    if ($null -ne $record -and [bool]$record.hadBackup) {
+      $preserveMetadataDirForPreflight = $true
+      break
+    }
+  }
+
+  $preflightRemovalRequests = @()
+  foreach ($recordName in @("launcher", "launcherConfig", "launcherRunner", "wizardDefaults", "windowsShortcut")) {
+    $record = $manifest.managedFiles.$recordName
+    if ($null -eq $record) {
+      continue
+    }
+
+    $currentPath = Get-ManifestRecordPath -RootPath $RootPath -Record $record
+    if (Test-Path -LiteralPath $currentPath -PathType Any) {
+      $preflightRemovalRequests += @{
+        Path = $currentPath
+        Reason = "Potential rollback removal for launcher-owned artifact"
+      }
+    }
+  }
+
+  if ($null -ne $manifest.generatedWorkspace) {
+    $generatedWorkspacePathForPreflight = Get-ManifestRecordPath -RootPath $RootPath -Record $manifest.generatedWorkspace
+    if (Test-Path -LiteralPath $generatedWorkspacePathForPreflight -PathType Any) {
+      $preflightRemovalRequests += @{
+        Path = $generatedWorkspacePathForPreflight
+        Reason = "Potential rollback removal for generated workspace"
+      }
+    }
+  }
+
+  if ($null -ne $manifest.managedFiles.vscodeSettings -and -not [bool]$manifest.managedFiles.vscodeSettings.existedBeforeSetup) {
+    $vscodeSettingsPathForPreflight = Get-ManifestRecordPath -RootPath $RootPath -Record $manifest.managedFiles.vscodeSettings
+    if (Test-Path -LiteralPath $vscodeSettingsPathForPreflight -PathType Any) {
+      $preflightRemovalRequests += @{
+        Path = $vscodeSettingsPathForPreflight
+        Reason = "Potential rollback removal for VS Code settings created by setup"
+      }
+    }
+  }
+
+  $backupSessionPathForPreflight = if (-not [string]::IsNullOrWhiteSpace([string]$manifest.latestBackupProjectRelativePath)) {
+    Resolve-ManifestProjectPath -RootPath $RootPath -PortableRelativePath ([string]$manifest.latestBackupProjectRelativePath)
+  } else {
+    ""
+  }
+
+  if ($preserveMetadataDirForPreflight) {
+    if (-not [string]::IsNullOrWhiteSpace($backupSessionPathForPreflight) -and (Test-Path -LiteralPath $backupSessionPathForPreflight -PathType Any)) {
+      $preflightRemovalRequests += @{
+        Path = $backupSessionPathForPreflight
+        Reason = "Potential rollback removal for current backup session"
+      }
+    }
+
+    if (Test-Path -LiteralPath $context.ManifestPath -PathType Leaf) {
+      $preflightRemovalRequests += @{
+        Path = $context.ManifestPath
+        Reason = "Potential rollback removal for rollback manifest"
+      }
+    }
+  } elseif (Test-Path -LiteralPath $context.MetadataDirPath -PathType Any) {
+    $preflightRemovalRequests += @{
+      Path = $context.MetadataDirPath
+      Reason = "Potential rollback removal for metadata directory"
+    }
+  }
+
+  if ($null -ne $codexRuntimeCleanupPlan) {
+    $preflightRemovalRequests += @($codexRuntimeCleanupPlan.RemovalRequests)
+    if ([bool]$codexRuntimeCleanupPlan.RemoveCodexDirectoryAfterCleanup) {
+      $preflightRemovalRequests += @{
+        Path = (Join-Path $RootPath ".codex")
+        Reason = "Potential rollback removal for empty Codex runtime directory"
+      }
+    }
+  }
+
+  Invoke-RollbackRemovalPreflight -RemovalRequests $preflightRemovalRequests -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+
+  if ($null -ne $manifest.managedFiles.vscodeSettings) {
+    $beforeCount = $removalRequests.Count
+    Invoke-RollbackVscodeSettings -RootPath $RootPath -Manifest $manifest -Record $manifest.managedFiles.vscodeSettings -Warnings ([ref]$warnings) -RemovalRequests ([ref]$removalRequests)
+    $summary.Edited += 1
+  }
+
+  if ($null -ne $manifest.managedFiles.workspaceSettings) {
+    if ($null -eq $manifest.generatedWorkspace) {
+      Invoke-RollbackWorkspaceSettings -RootPath $RootPath -Manifest $manifest -Record $manifest.managedFiles.workspaceSettings -Warnings ([ref]$warnings)
+      $summary.Edited += 1
+    }
+  }
+
+  if ($null -ne $manifest.managedFiles.gitignore) {
+    $gitignorePath = Get-ManifestRecordPath -RootPath $RootPath -Record $manifest.managedFiles.gitignore
+    if (Remove-ManagedGitIgnoreBlockCurrent -Record $manifest.managedFiles.gitignore -Path $gitignorePath) {
+      $summary.Edited += 1
+    }
+  }
+
+  $preserveMetadataDir = [bool]$manifest.managedFiles.metadataDirectory.existedBeforeSetup
+  foreach ($recordName in @("wizardDefaults", "launcherConfig", "launcherRunner")) {
+    $record = $manifest.managedFiles.$recordName
+    if ($null -ne $record -and [bool]$record.hadBackup) {
+      $preserveMetadataDir = $true
+      break
+    }
+  }
+
+  foreach ($recordName in @("launcher", "launcherConfig", "launcherRunner", "wizardDefaults", "windowsShortcut")) {
+    $record = $manifest.managedFiles.$recordName
+    if ($null -eq $record) {
+      continue
+    }
+
+    $currentPath = Get-ManifestRecordPath -RootPath $RootPath -Record $record
+    $backupPath = Get-ManifestRecordBackupPath -RootPath $RootPath -Manifest $manifest -Record $record
+
+    if ([bool]$record.hadBackup -and -not [string]::IsNullOrWhiteSpace($backupPath)) {
+      if (Test-Path -LiteralPath $currentPath -PathType Any) {
+        $removalRequests += @{
+          Path = $currentPath
+          Reason = "Replace current managed artifact with its pre-setup backup"
+        }
+      }
+
+      $restoreRequests += @{
+        TargetPath = $currentPath
+        BackupPath = $backupPath
+      }
+      continue
+    }
+
+    if (Test-Path -LiteralPath $currentPath -PathType Any) {
+      $removalRequests += @{
+        Path = $currentPath
+        Reason = "Remove launcher-owned artifact created by setup"
+      }
+    }
+  }
+
+  foreach ($record in @($manifest.removedDuringSetup)) {
+    if ($null -eq $record -or -not [bool]$record.hadBackup) {
+      continue
+    }
+
+    $targetPath = Get-ManifestRecordPath -RootPath $RootPath -Record $record
+    if (Test-Path -LiteralPath $targetPath -PathType Any) {
+      $warnings += ("Skipped restoring '{0}' because the path now exists and may contain user changes." -f $targetPath)
+      continue
+    }
+
+    $backupPath = Get-ManifestRecordBackupPath -RootPath $RootPath -Manifest $manifest -Record $record
+    $restoreRequests += @{
+      TargetPath = $targetPath
+      BackupPath = $backupPath
+    }
+  }
+
+  if ($null -ne $codexRuntimeCleanupPlan) {
+    $removalRequests += @($codexRuntimeCleanupPlan.RemovalRequests)
+  }
+
+  if ($null -ne $manifest.generatedWorkspace) {
+    $generatedWorkspacePath = Get-ManifestRecordPath -RootPath $RootPath -Record $manifest.generatedWorkspace
+    if (Test-Path -LiteralPath $generatedWorkspacePath -PathType Any) {
+      $removalRequests += @{
+        Path = $generatedWorkspacePath
+        Reason = "Remove workspace file created by setup"
+      }
+    }
+  }
+
+  $backupSessionPath = if (-not [string]::IsNullOrWhiteSpace([string]$manifest.latestBackupProjectRelativePath)) {
+    Resolve-ManifestProjectPath -RootPath $RootPath -PortableRelativePath ([string]$manifest.latestBackupProjectRelativePath)
+  } else {
+    ""
+  }
+
+  Invoke-RollbackRemoval -RemovalRequests $removalRequests -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+
+  foreach ($restore in $restoreRequests) {
+    Restore-PathFromBackup -BackupPath $restore.BackupPath -TargetPath $restore.TargetPath
+    $summary.Restored += 1
+  }
+
+  if ($null -ne $codexRuntimeCleanupPlan -and [bool]$codexRuntimeCleanupPlan.RemoveCodexDirectoryAfterCleanup) {
+    $codexDirPath = Join-Path $RootPath ".codex"
+    if (Test-Path -LiteralPath $codexDirPath -PathType Container) {
+      $remainingCodexItems = @(Get-ChildItem -LiteralPath $codexDirPath -Force -ErrorAction SilentlyContinue)
+      if ($remainingCodexItems.Count -eq 0) {
+        Invoke-RollbackRemoval -RemovalRequests @(@{ Path = $codexDirPath; Reason = "Remove empty Codex runtime directory" }) -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+      }
+    }
+  }
+
+  if ($preserveMetadataDir) {
+    if (-not [string]::IsNullOrWhiteSpace($backupSessionPath) -and (Test-Path -LiteralPath $backupSessionPath -PathType Any)) {
+      Invoke-RollbackRemoval -RemovalRequests @(@{ Path = $backupSessionPath; Reason = "Remove current setup backup session" }) -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+    }
+
+    if (Test-Path -LiteralPath $context.ManifestPath -PathType Leaf) {
+      Invoke-RollbackRemoval -RemovalRequests @(@{ Path = $context.ManifestPath; Reason = "Remove current rollback manifest" }) -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+    }
+
+    if (Test-Path -LiteralPath $context.MetadataDirPath -PathType Container) {
+      $remainingMetadataItems = @(Get-ChildItem -LiteralPath $context.MetadataDirPath -Force -ErrorAction SilentlyContinue)
+      if ($remainingMetadataItems.Count -eq 0) {
+        Invoke-RollbackRemoval -RemovalRequests @(@{ Path = $context.MetadataDirPath; Reason = "Remove empty metadata directory" }) -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+      }
+    }
+  } else {
+    if (Test-Path -LiteralPath $context.MetadataDirPath -PathType Any) {
+      Invoke-RollbackRemoval -RemovalRequests @(@{ Path = $context.MetadataDirPath; Reason = "Remove metadata directory created by setup" }) -Summary ([ref]$summary) -AllowPermanentDeleteFallback ([ref]$allowPermanentDeleteFallback) -DeleteBehavior $DeleteBehavior
+    }
+  }
+
+  $summary.Warnings = $warnings.Count
+  Write-Host ""
+  Write-Host "Rollback completed successfully."
+  Write-Host ("- Restored: {0}" -f $summary.Restored)
+  Write-Host ("- Trashed: {0}" -f $summary.Trashed)
+  Write-Host ("- PermanentlyDeleted: {0}" -f $summary.PermanentlyDeleted)
+  Write-Host ("- Edited: {0}" -f $summary.Edited)
+  foreach ($warning in $warnings) {
+    Write-Info ("Rollback warning: {0}" -f $warning)
+  }
+}
+
 function Initialize-BackupContext {
   param(
     [string]$RootPath,
@@ -921,7 +2058,7 @@ function Backup-PathIfExists {
     return $null
   }
 
-  $fullPath = [IO.Path]::GetFullPath((Get-Item -LiteralPath $Path -Force).FullName)
+  $fullPath = Resolve-FullPathSafe -Path $Path
   if ($script:BackupPathIndex.ContainsKey($fullPath)) {
     return $script:BackupPathIndex[$fullPath]
   }
@@ -935,15 +2072,12 @@ function Backup-PathIfExists {
   }
 
   $relative = ""
-  try {
-    $candidate = Get-RelativePathSafe -BasePath $RootPath -TargetPath $fullPath
-    if ($candidate.StartsWith("..")) {
-      $relative = Join-Path "external" (Split-Path -Leaf $fullPath)
-    } else {
-      $relative = $candidate
-    }
-  } catch {
-    $relative = Join-Path "external" (Split-Path -Leaf $fullPath)
+  $isExternal = $false
+  if (Test-PathUnderRoot -RootPath $RootPath -TargetPath $fullPath) {
+    $relative = Convert-ToPortableRelativePath -Path (Get-RelativePathSafe -BasePath $RootPath -TargetPath $fullPath)
+  } else {
+    $relative = Convert-ToPortableRelativePath -Path (Join-Path "external" (Split-Path -Leaf $fullPath))
+    $isExternal = $true
   }
 
   $relativeSafe = ($relative -replace '[<>:"|?*]', '_')
@@ -960,9 +2094,17 @@ function Backup-PathIfExists {
     Copy-Item -LiteralPath $fullPath -Destination $backupPath -Force
   }
 
-  $script:BackupPathIndex[$fullPath] = $backupPath
+  $record = [ordered]@{
+    OriginalPath = $fullPath
+    OriginalRelativePath = $relative
+    BackupPath = $backupPath
+    BackupRelativePath = $relativeSafe
+    IsExternal = $isExternal
+  }
+
+  $script:BackupPathIndex[$fullPath] = $record
   Write-Info ("Backup created: {0}" -f $backupPath)
-  return $backupPath
+  return $record
 }
 
 function Set-VscodeChatGptSettings {
@@ -974,6 +2116,7 @@ function Set-VscodeChatGptSettings {
 
   $vscodeDir = Join-Path $RootPath ".vscode"
   $settingsPath = Join-Path $vscodeDir "settings.json"
+  $settingsExistedBeforeSetup = Test-Path -LiteralPath $settingsPath -PathType Leaf
   $vscodeDirCreated = Ensure-Directory -Path $vscodeDir
   if ($vscodeDirCreated) {
     Set-HiddenDotPath -Path $vscodeDir
@@ -1003,11 +2146,29 @@ function Set-VscodeChatGptSettings {
 
   Backup-PathIfExists -Path $settingsPath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
   $json = $obj | ConvertTo-Json -Depth 50
-  Set-Content -LiteralPath $settingsPath -Value $json
+  $referenceText = if (Test-Path -LiteralPath $settingsPath -PathType Leaf) { Get-Content -LiteralPath $settingsPath -Raw } else { "" }
+  Write-Utf8NoBomText -Path $settingsPath -Content $json -ReferenceText $referenceText
+  $settingsManifest = New-ManagedPathRecord -Path $settingsPath -RootPath $RootPath -Kind "file" -ExistedBeforeSetup $settingsExistedBeforeSetup
 
   return @{
+    Path = $settingsPath
+    ExistedBeforeSetup = $settingsExistedBeforeSetup
     PreviousRunCodexInWsl = $previousRunCodexInWsl
     PreviousOpenOnStartup = $previousOpenOnStartup
+    Manifest = if ($null -ne $settingsManifest) {
+      Merge-Hashtable -Base $settingsManifest -Additional @{
+        managedKeys = [ordered]@{
+          "chatgpt.runCodexInWindowsSubsystemForLinux" = @{
+            existedBeforeSetup = ($null -ne $previousRunCodexInWsl)
+            appliedValue = $RunCodexInWsl
+          }
+          "chatgpt.openOnStartup" = @{
+            existedBeforeSetup = ($null -ne $previousOpenOnStartup)
+            appliedValue = $true
+          }
+        }
+      }
+    } else { $null }
   }
 }
 
@@ -1016,16 +2177,23 @@ function Set-CodeWorkspaceChatGptSettings {
     [string]$WorkspacePath,
     [bool]$RunCodexInWsl,
     [string]$RootPath,
-    [string]$MetadataDirName = ".vsc_launcher"
+    [string]$MetadataDirName = ".vsc_launcher",
+    [Nullable[bool]]$ExistedBeforeSetup = $null
   )
 
   if (-not (Test-Path -LiteralPath $WorkspacePath -PathType Leaf)) {
     return @{
       Applied = $false
       Reason = "Workspace file not found."
+      Manifest = $null
     }
   }
 
+  $workspaceExistedBeforeSetup = if ($null -ne $ExistedBeforeSetup) {
+    [bool]$ExistedBeforeSetup
+  } else {
+    Test-Path -LiteralPath $WorkspacePath -PathType Leaf
+  }
   $raw = Get-Content -LiteralPath $WorkspacePath -Raw
   $workspaceObject = $null
   try {
@@ -1072,12 +2240,29 @@ function Set-CodeWorkspaceChatGptSettings {
   $workspaceObject["settings"] = $settings
 
   Backup-PathIfExists -Path $WorkspacePath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
-  Set-Content -LiteralPath $WorkspacePath -Value ($workspaceObject | ConvertTo-Json -Depth 50)
+  Write-Utf8NoBomText -Path $WorkspacePath -Content ($workspaceObject | ConvertTo-Json -Depth 50) -ReferenceText $raw
+  $workspaceManifest = New-ManagedPathRecord -Path $WorkspacePath -RootPath $RootPath -Kind "file" -ExistedBeforeSetup $workspaceExistedBeforeSetup
   return @{
     Applied = $true
     Reason = ""
+    Path = $WorkspacePath
+    ExistedBeforeSetup = $workspaceExistedBeforeSetup
     PreviousRunCodexInWsl = $previousRunCodexInWsl
     PreviousOpenOnStartup = $previousOpenOnStartup
+    Manifest = if ($null -ne $workspaceManifest) {
+      Merge-Hashtable -Base $workspaceManifest -Additional @{
+        managedKeys = [ordered]@{
+          "chatgpt.runCodexInWindowsSubsystemForLinux" = @{
+            existedBeforeSetup = ($null -ne $previousRunCodexInWsl)
+            appliedValue = $RunCodexInWsl
+          }
+          "chatgpt.openOnStartup" = @{
+            existedBeforeSetup = ($null -ne $previousOpenOnStartup)
+            appliedValue = $true
+          }
+        }
+      }
+    } else { $null }
   }
 }
 
@@ -1093,8 +2278,13 @@ function Update-GitIgnoreBlock {
   $startMarker = "# >>> codex-session-isolator >>>"
   $endMarker = "# <<< codex-session-isolator <<<"
 
-  if (-not (Test-Path -LiteralPath $gitignorePath -PathType Leaf)) {
-    return $false
+  $gitignoreExistedBeforeSetup = Test-Path -LiteralPath $gitignorePath -PathType Leaf
+  if (-not $gitignoreExistedBeforeSetup) {
+    return @{
+      Applied = $false
+      ExistedBeforeSetup = $false
+      Manifest = New-ManagedPathRecord -Path $gitignorePath -RootPath $RootPath -Kind "file" -ExistedBeforeSetup $false -ExistsAfterSetup $false
+    }
   }
 
   $blockLines = @(
@@ -1133,28 +2323,40 @@ function Update-GitIgnoreBlock {
   }
 
   $blockLines += $endMarker
-  $newBlock = ($blockLines -join "`n") + "`n"
-
   $current = Get-Content -LiteralPath $gitignorePath -Raw
+  $lineEnding = Get-PreferredLineEnding -Text $current
+  $newBlock = ($blockLines -join $lineEnding) + $lineEnding
+  $pattern = "(?ms)^" + [regex]::Escape($startMarker) + ".*?^" + [regex]::Escape($endMarker) + "\s*"
   Backup-PathIfExists -Path $gitignorePath -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
 
+  $applied = $false
   if ([string]::IsNullOrEmpty($current)) {
-    Set-Content -LiteralPath $gitignorePath -Value $newBlock
-    return $true
-  }
-
-  $pattern = "(?ms)^" + [regex]::Escape($startMarker) + ".*?^" + [regex]::Escape($endMarker) + "\s*"
-  if ($current -match $pattern) {
+    Write-Utf8NoBomText -Path $gitignorePath -Content $newBlock -ReferenceText $current
+    $applied = $true
+  } elseif ($current -match $pattern) {
     $updated = [regex]::Replace($current, $pattern, $newBlock)
-    Set-Content -LiteralPath $gitignorePath -Value $updated
-    return $true
+    Write-Utf8NoBomText -Path $gitignorePath -Content $updated -ReferenceText $current
+    $applied = $true
   } else {
     if (-not $current.EndsWith("`n")) {
-      $current += "`n"
+      $current += $lineEnding
     }
-    $updated = $current + "`n" + $newBlock
-    Set-Content -LiteralPath $gitignorePath -Value $updated
-    return $true
+    $updated = $current + $lineEnding + $newBlock
+    Write-Utf8NoBomText -Path $gitignorePath -Content $updated -ReferenceText $current
+    $applied = $true
+  }
+
+  $gitignoreManifest = New-ManagedPathRecord -Path $gitignorePath -RootPath $RootPath -Kind "file" -ExistedBeforeSetup $gitignoreExistedBeforeSetup
+  return @{
+    Applied = $applied
+    ExistedBeforeSetup = $gitignoreExistedBeforeSetup
+    Manifest = if ($null -ne $gitignoreManifest) {
+      Merge-Hashtable -Base $gitignoreManifest -Additional @{
+        startMarker = $startMarker
+        endMarker = $endMarker
+        trackSessionHistory = $TrackSessionHistory
+      }
+    } else { $null }
   }
 }
 
@@ -1322,12 +2524,16 @@ function Remove-LegacyGeneratedArtifacts {
     }
   }
 
+  $removedArtifacts = @()
   foreach ($path in $legacyPaths) {
     if (Test-Path -LiteralPath $path -PathType Any) {
       Backup-PathIfExists -Path $path -RootPath $RootPath -MetadataDirName $MetadataDirName | Out-Null
+      $removedArtifacts += (New-ManagedPathRecord -Path $path -RootPath $RootPath -Kind "legacy-artifact" -ExistsAfterSetup $false)
       Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
+
+  return $removedArtifacts
 }
 
 function New-WindowsLauncherFile {
@@ -2111,6 +3317,7 @@ $resolvedTargetInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | 
 $resolvedTarget = [IO.Path]::GetFullPath($resolvedTargetInfo.ProviderPath)
 $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
 $targetRoot = if ($targetItem.PSIsContainer) { $resolvedTarget } else { Split-Path -Parent $resolvedTarget }
+$metadataDirExistedBeforeSetup = Test-Path -LiteralPath (Join-Path $targetRoot $metadataDirName) -PathType Container
 $isWslUncProjectTarget = $platformIsWindows -and (Test-IsWslUncPath -Path $resolvedTarget)
 $isWslLinuxProjectTarget = (Test-IsWslLinuxEnvironment) -and $resolvedTarget.StartsWith("/")
 $isLinuxHostedProjectTarget = $isWslUncProjectTarget -or $isWslLinuxProjectTarget
@@ -2121,6 +3328,23 @@ $windowsWslShortcutFileName = if ($shouldGenerateWindowsWslShortcut) {
 } else {
   ""
 }
+if ($Rollback) {
+  if (Test-Path -LiteralPath (Join-Path $targetRoot $metadataDirName) -PathType Container) {
+    Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($deferredFallbackInfo)) {
+    Write-Info $deferredFallbackInfo
+  }
+
+  Write-Info ("Rollback target root: {0}" -f $targetRoot)
+  if ($RollbackRemoveCodexRuntimeData) {
+    Write-Info "Rollback will also remove project Codex runtime data under .codex/ (except config.toml)."
+  }
+  Invoke-RollbackForTarget -RootPath $targetRoot -MetadataDirName $metadataDirName -RemoveCodexRuntimeData:$RollbackRemoveCodexRuntimeData -DeleteBehavior $RollbackDeleteBehavior
+  exit 0
+}
+
 Initialize-WizardLogging -RootPath $targetRoot -MetadataDirName $metadataDirName
 $defaultsInfo = Get-WizardDefaults -RootPath $targetRoot -MetadataDirName $metadataDirName
 $wizardDefaults = $defaultsInfo.Values
@@ -2141,6 +3365,8 @@ if ($null -ne $wizardDefaults.useRemoteWsl -or $null -ne $wizardDefaults.codexRu
 
 $launchMode = "folder"
 $workspaceRelativePath = ""
+$generatedWorkspacePath = ""
+$generatedWorkspaceCreated = $false
 
 if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-workspace") {
   $launchMode = "workspace"
@@ -2164,6 +3390,7 @@ if (-not $targetItem.PSIsContainer -and $targetItem.Extension -ieq ".code-worksp
     Backup-PathIfExists -Path $generatedWorkspacePath -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
     Set-Content -LiteralPath $generatedWorkspacePath -Value ($workspacePayload | ConvertTo-Json -Depth 10)
 
+    $generatedWorkspaceCreated = $true
     $launchMode = "workspace"
     $workspaceRelativePath = Get-RelativePathSafe -BasePath $targetRoot -TargetPath $generatedWorkspacePath
     Write-Info ("No workspace file found. Created workspace: {0}" -f $workspaceRelativePath)
@@ -2199,6 +3426,7 @@ $windowsShortcutDestinationDir = ""
 $windowsShortcutPathForGeneration = ""
 $windowsShortcutPathForOutput = ""
 $shortcutLivesInProjectRoot = $false
+$windowsShortcutExistedBeforeSetup = $false
 
 if ($platformIsWindows -and $wslAvailable) {
   $remoteDefault = $false
@@ -2354,7 +3582,8 @@ if ($launchMode -eq "workspace" -and -not [string]::IsNullOrWhiteSpace($workspac
     -WorkspacePath $workspacePathForSettings `
     -RunCodexInWsl $codexRunInWsl `
     -RootPath $targetRoot `
-    -MetadataDirName $metadataDirName
+    -MetadataDirName $metadataDirName `
+    -ExistedBeforeSetup (-not $generatedWorkspaceCreated)
   if ($workspaceSettingsWrite.Applied) {
     Write-Info ("Workspace settings updated in: {0}" -f $workspaceRelativePath)
     if ($null -ne $workspaceSettingsWrite.PreviousRunCodexInWsl -and $workspaceSettingsWrite.PreviousRunCodexInWsl -ne $codexRunInWsl) {
@@ -2375,7 +3604,8 @@ Save-WizardDefaults `
   -WindowsShortcutEnabled $windowsShortcutEnabledForDefaults `
   -WindowsShortcutLocation $windowsShortcutLocationForDefaults `
   -WindowsShortcutCustomPath $windowsShortcutCustomPathForDefaults
-Remove-LegacyGeneratedArtifacts `
+$wizardDefaultsManifest = New-ManagedPathRecord -Path $defaultsInfo.Path -RootPath $targetRoot -Kind "file"
+$legacyRemovedArtifacts = Remove-LegacyGeneratedArtifacts `
   -RootPath $targetRoot `
   -LauncherBaseName $launcherBaseName `
   -MetadataDirName $metadataDirName `
@@ -2386,12 +3616,12 @@ if ($createWindowsShortcut -and $shortcutLivesInProjectRoot) {
   $additionalGeneratedFiles += $windowsWslShortcutFileName
 }
 
-$gitignoreUpdated = Update-GitIgnoreBlock `
+$gitignoreResult = Update-GitIgnoreBlock `
   -RootPath $targetRoot `
   -TrackSessionHistory $trackSessionHistory `
   -MetadataDirName $metadataDirName `
   -AdditionalGeneratedFiles $additionalGeneratedFiles
-if ($gitignoreUpdated) {
+if ($gitignoreResult.Applied) {
   Write-Info "Managed .gitignore block updated."
 } else {
   Write-Info "No .gitignore found in target root. Skipping .gitignore update."
@@ -2399,8 +3629,10 @@ if ($gitignoreUpdated) {
 
 $staleLauncherFileName = if ($launcherFileName.EndsWith(".sh")) { "$launcherBaseName.bat" } else { "$launcherBaseName.sh" }
 $staleLauncherPath = Join-Path $targetRoot $staleLauncherFileName
+$staleLauncherManifest = $null
 if (Test-Path -LiteralPath $staleLauncherPath -PathType Leaf) {
   Backup-PathIfExists -Path $staleLauncherPath -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
+  $staleLauncherManifest = New-ManagedPathRecord -Path $staleLauncherPath -RootPath $targetRoot -Kind "launcher" -ExistsAfterSetup $false
   Remove-Item -LiteralPath $staleLauncherPath -Force -ErrorAction SilentlyContinue
   Write-Info ("Removed stale launcher file: {0}" -f $staleLauncherFileName)
 }
@@ -2444,8 +3676,14 @@ if ($shouldGenerateWindowsWslShortcut -and -not [string]::IsNullOrWhiteSpace($sh
 }
 
 if ($createWindowsShortcut -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForGeneration)) {
-  if ($shortcutLivesInProjectRoot -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForOutput)) {
-    Backup-PathIfExists -Path $windowsShortcutPathForOutput -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
+  $windowsShortcutExistingPath = if ($shortcutLivesInProjectRoot -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForOutput)) {
+    $windowsShortcutPathForOutput
+  } else {
+    $windowsShortcutPathForGeneration
+  }
+  if (-not [string]::IsNullOrWhiteSpace($windowsShortcutExistingPath)) {
+    $windowsShortcutExistedBeforeSetup = Test-Path -LiteralPath $windowsShortcutExistingPath -PathType Any
+    Backup-PathIfExists -Path $windowsShortcutExistingPath -RootPath $targetRoot -MetadataDirName $metadataDirName | Out-Null
   }
 
   if ($platformIsWindows) {
@@ -2491,6 +3729,65 @@ if ($outputs.Contains("WindowsExternalShortcutPath")) {
 if ($shouldGenerateWindowsWslShortcut -and $createWindowsShortcut -and [string]::IsNullOrWhiteSpace($windowsShortcutIconLocation)) {
   Write-Info "VS Code icon was not detected. Shortcut uses default system icon."
 }
+
+$rollbackMetadataDirPath = Join-Path $targetRoot $metadataDirName
+$removedDuringSetup = @($legacyRemovedArtifacts)
+if ($null -ne $staleLauncherManifest) {
+  $removedDuringSetup += $staleLauncherManifest
+}
+$rollbackManifestData = [ordered]@{
+  schemaVersion = 1
+  targetRootPath = (Resolve-FullPathSafe -Path $targetRoot)
+  metadataDirRelativePath = $metadataDirName
+  launchMode = $launchMode
+  workspaceRelativePath = if ([string]::IsNullOrWhiteSpace($workspaceRelativePath)) { $null } else { (Convert-ToPortableRelativePath -Path $workspaceRelativePath) }
+  trackSessionHistory = $trackSessionHistory
+  latestBackupSessionId = if ([string]::IsNullOrWhiteSpace($script:BackupSessionId)) { $null } else { $script:BackupSessionId }
+  latestBackupProjectRelativePath = if ([string]::IsNullOrWhiteSpace($script:BackupSessionId)) { $null } else { (Convert-ToPortableRelativePath -Path (Join-Path $metadataDirName (Join-Path "backups" $script:BackupSessionId))) }
+  updatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+  generatedWorkspace = if ($generatedWorkspaceCreated -and -not [string]::IsNullOrWhiteSpace($generatedWorkspacePath)) {
+    $generatedWorkspaceRecord = New-ManagedPathRecord -Path $generatedWorkspacePath -RootPath $targetRoot -Kind "workspace-file"
+    if ($null -ne $generatedWorkspaceRecord) {
+      Merge-Hashtable -Base $generatedWorkspaceRecord -Additional @{
+        createdByWizard = $true
+      }
+    } else { $null }
+  } else { $null }
+  managedFiles = [ordered]@{
+    metadataDirectory = (New-ManagedPathRecord -Path $rollbackMetadataDirPath -RootPath $targetRoot -Kind "directory" -ExistedBeforeSetup $metadataDirExistedBeforeSetup)
+    wizardDefaults = $wizardDefaultsManifest
+    rollbackManifest = [ordered]@{
+      kind = "file"
+      pathScope = "project"
+      projectRelativePath = (Convert-ToPortableRelativePath -Path (Join-Path $metadataDirName "rollback.manifest.json"))
+      absolutePath = $null
+    }
+    vscodeSettings = $settingsWrite.Manifest
+    workspaceSettings = if ($launchMode -eq "workspace") { $workspaceSettingsWrite.Manifest } else { $null }
+    gitignore = $gitignoreResult.Manifest
+    launcher = (New-ManagedPathRecord -Path $outputs["LauncherPath"] -RootPath $targetRoot -Kind "launcher")
+    launcherConfig = (New-ManagedPathRecord -Path $outputs["ConfigPath"] -RootPath $targetRoot -Kind "launcher-config")
+    launcherRunner = if ($outputs.Contains("RunnerPath")) { (New-ManagedPathRecord -Path $outputs["RunnerPath"] -RootPath $targetRoot -Kind "launcher-runner") } else { $null }
+    windowsShortcut = if ($createWindowsShortcut -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForGeneration)) {
+      $shortcutRecordPath = if ($shortcutLivesInProjectRoot -and -not [string]::IsNullOrWhiteSpace($windowsShortcutPathForOutput)) {
+        $windowsShortcutPathForOutput
+      } else {
+        $windowsShortcutPathForGeneration
+      }
+      $shortcutRecord = New-ManagedPathRecord -Path $shortcutRecordPath -RootPath $targetRoot -Kind "windows-shortcut" -ExistedBeforeSetup $windowsShortcutExistedBeforeSetup
+      if ($null -ne $shortcutRecord) {
+        Merge-Hashtable -Base $shortcutRecord -Additional @{
+          enabled = $true
+          locationKey = $windowsShortcutLocationKey
+          livesInProjectRoot = $shortcutLivesInProjectRoot
+        }
+      } else { $null }
+    } else { $null }
+  }
+  removedDuringSetup = @($removedDuringSetup | Where-Object { $null -ne $_ })
+}
+$rollbackManifestPath = Save-RollbackManifest -RootPath $targetRoot -MetadataDirName $metadataDirName -Manifest $rollbackManifestData
+Write-Info ("Rollback manifest updated: {0}" -f $rollbackManifestPath)
 
 Write-Host ""
 Write-Host "Launcher generated successfully."

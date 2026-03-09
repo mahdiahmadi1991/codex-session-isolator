@@ -28,14 +28,14 @@ Before overwriting managed files, backups are created under:
 
 - `.vsc_launcher/backups/<timestamp-pid>/`
 
-This allows manual rollback when needed.
+The latest setup also records rollback ownership in `.vsc_launcher/rollback.manifest.json` so launcher-managed changes can be rolled back without guessing across unrelated user files.
 
 ## Runtime trust controls (extension)
 
 - Extension actions require VS Code trusted workspace.
-- Initialization prompts an explicit confirmation by default.
-- Confirmation behavior can be controlled with:
-  - `codexSessionIsolator.requireConfirmation`
+- Rollback only asks the follow-up questions that are actually needed for the selected target and environment.
+- Extension operation logs stay local: flow breadcrumbs remain in the VS Code output channel and, when a project already has `.vsc_launcher/logs`, are also appended there as best-effort local log entries.
+- Extension logging remains non-blocking and does not create remote uploads, telemetry, or credential-bearing secret dumps.
 
 ## CI security controls
 
@@ -56,4 +56,3 @@ Marketplace publish workflow generates:
 - SHA-256 checksum (`.vsix.sha256`)
 
 For stable releases, these are attached as release assets for independent verification.
-

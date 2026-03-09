@@ -46,6 +46,73 @@ type InitializeFlowOptions = {
   promptToReopenAfterInitialize: boolean;
 };
 
+type RollbackDeleteBehavior = "Stop" | "DeletePermanently";
+
+type RollbackRunResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+type RollbackExecutionPlatform = "windows" | "mac" | "linux";
+
+type RollbackExecutionDetails = {
+  powerShellCommand: string;
+  scriptPathForCommand: string;
+  targetRootForCommand: string;
+  executionPlatform: RollbackExecutionPlatform;
+};
+
+type RollbackManifestRecord = {
+  kind?: string | null;
+  pathScope?: string | null;
+  existedBeforeSetup?: boolean;
+  existsAfterSetup?: boolean;
+  hadBackup?: boolean;
+  backupRelativePath?: string | null;
+  projectRelativePath?: string | null;
+  absolutePath?: string | null;
+};
+
+type RollbackManifest = {
+  schemaVersion?: number;
+  latestBackupSessionId?: string | null;
+  latestBackupProjectRelativePath?: string | null;
+  launchMode?: string | null;
+  workspaceRelativePath?: string | null;
+  generatedWorkspace?: {
+    createdByWizard?: boolean;
+    projectRelativePath?: string | null;
+  } | null;
+  managedFiles?: {
+    wizardDefaults?: RollbackManifestRecord | null;
+    rollbackManifest?: RollbackManifestRecord | null;
+    launcher?: RollbackManifestRecord | null;
+    launcherConfig?: RollbackManifestRecord | null;
+    launcherRunner?: RollbackManifestRecord | null;
+    windowsShortcut?: (RollbackManifestRecord & {
+      enabled?: boolean;
+      locationKey?: string | null;
+      livesInProjectRoot?: boolean;
+    }) | null;
+    vscodeSettings?: RollbackManifestRecord | null;
+    workspaceSettings?: RollbackManifestRecord | null;
+    gitignore?: RollbackManifestRecord | null;
+    metadataDirectory?: RollbackManifestRecord | null;
+  } | null;
+  removedDuringSetup?: RollbackManifestRecord[] | null;
+};
+
+type RollbackRemovalCandidate = {
+  displayPath: string;
+  executionPath: string;
+};
+
+type RollbackPreflightPlan = {
+  unsupportedRemovalCandidates: string[];
+  requiresPermanentDeleteFallback: boolean;
+};
+
 type LogLevel = "INFO" | "WARN" | "ERROR";
 
 type WizardPromptContext = {
@@ -54,20 +121,14 @@ type WizardPromptContext = {
 };
 
 const EXTENSION_NAMESPACE = "codexSessionIsolator";
-const LEGACY_NAMESPACE = "codexProjectIsolator";
-
-const CMD_INITIALIZE = `${EXTENSION_NAMESPACE}.initialize`;
 const CMD_SETUP = `${EXTENSION_NAMESPACE}.setup`;
 const CMD_REOPEN = `${EXTENSION_NAMESPACE}.reopenWithLauncher`;
+const CMD_ROLLBACK = `${EXTENSION_NAMESPACE}.rollback`;
 const CMD_OPEN_LOGS = `${EXTENSION_NAMESPACE}.openLogs`;
 const CMD_OPEN_CONFIG = `${EXTENSION_NAMESPACE}.openConfig`;
-const LEGACY_CMD_INITIALIZE = `${LEGACY_NAMESPACE}.initialize`;
-const LEGACY_CMD_SETUP = `${LEGACY_NAMESPACE}.setup`;
-const LEGACY_CMD_REOPEN = `${LEGACY_NAMESPACE}.reopenWithLauncher`;
-const LEGACY_CMD_OPEN_LOGS = `${LEGACY_NAMESPACE}.openLogs`;
-const LEGACY_CMD_OPEN_CONFIG = `${LEGACY_NAMESPACE}.openConfig`;
 const WIZARD_TIMEOUT_MS = 120_000;
 const REOPEN_CLOSE_HANDOFF_DELAY_MS = 1500;
+const PROJECT_EXTENSION_LOG_PREFIX = "extension";
 
 function formatTimestamp(): string {
   return new Date().toISOString();
@@ -96,6 +157,43 @@ function appendOutputLine(
 ): void {
   const normalized = normalizeLogMessage(message);
   output.appendLine(`${formatTimestamp()} [${level}] [${normalized.scope}] ${normalized.body}`);
+}
+
+function getProjectExtensionLogPath(targetRoot: string): string {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return path.join(targetRoot, ".vsc_launcher", "logs", `${PROJECT_EXTENSION_LOG_PREFIX}-${stamp}.log`);
+}
+
+async function appendProjectLogLine(
+  targetRoot: string,
+  scope: string,
+  payload: Record<string, unknown>,
+  level: LogLevel = "INFO"
+): Promise<void> {
+  const logPath = getProjectExtensionLogPath(targetRoot);
+  const logDir = path.dirname(logPath);
+  if (!existsSync(logDir)) {
+    return;
+  }
+
+  const body = JSON.stringify(payload);
+  const line = `${formatTimestamp()} [${level}] [extension.${scope}] ${body}\n`;
+  try {
+    await fs.appendFile(logPath, line, "utf8");
+  } catch {
+    // Extension-local project logging is best-effort and must never block the main flow.
+  }
+}
+
+async function logOperationEvent(
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  scope: string,
+  payload: Record<string, unknown>,
+  level: LogLevel = "INFO"
+): Promise<void> {
+  appendOutputLine(output, `[extension][${scope}] ${JSON.stringify(payload)}`, level);
+  await appendProjectLogLine(targetRoot, scope, payload, level);
 }
 
 function delay(ms: number): Promise<void> {
@@ -183,11 +281,6 @@ function getBooleanSetting(key: string, fallback: boolean): boolean {
     return value;
   }
 
-  const legacy = vscode.workspace.getConfiguration(LEGACY_NAMESPACE).get<boolean>(key);
-  if (typeof legacy === "boolean") {
-    return legacy;
-  }
-
   return fallback;
 }
 
@@ -195,9 +288,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Codex Session Isolator");
   context.subscriptions.push(output);
 
-  const initializeHandler = async () => {
-    await initializeLauncherCommand(context, output);
-  };
   const setupHandler = async () => {
     await setupLauncherCommand(context, output);
   };
@@ -207,6 +297,9 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     await reopenWithLauncher(context, output, root, true);
+  };
+  const rollbackHandler = async () => {
+    await rollbackLauncherCommand(context, output);
   };
   const openLogsHandler = async () => {
     const root = await pickTargetRoot();
@@ -223,45 +316,14 @@ export function activate(context: vscode.ExtensionContext): void {
     await openConfigFile(root);
   };
 
-  context.subscriptions.push(vscode.commands.registerCommand(CMD_INITIALIZE, initializeHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_SETUP, setupHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_REOPEN, reopenHandler));
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_ROLLBACK, rollbackHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_LOGS, openLogsHandler));
   context.subscriptions.push(vscode.commands.registerCommand(CMD_OPEN_CONFIG, openConfigHandler));
-
-  // Keep legacy command IDs active so older keybindings/tasks still work after renaming.
-  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_INITIALIZE, initializeHandler));
-  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_SETUP, setupHandler));
-  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_REOPEN, reopenHandler));
-  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_LOGS, openLogsHandler));
-  context.subscriptions.push(vscode.commands.registerCommand(LEGACY_CMD_OPEN_CONFIG, openConfigHandler));
 }
 
 export function deactivate(): void {}
-
-async function initializeLauncherCommand(
-  context: vscode.ExtensionContext,
-  output: vscode.OutputChannel
-): Promise<void> {
-  const targetSelection = await pickOperationTarget();
-  if (!targetSelection) {
-    return;
-  }
-
-  const initialized = await initializeLauncherForTarget(
-    context,
-    output,
-    targetSelection.targetRoot,
-    {
-      autoReopenAfterInitialize: false,
-      promptToReopenAfterInitialize: targetSelection.scope === "current"
-    }
-  );
-
-  if (initialized && targetSelection.scope === "other") {
-    await showExternalTargetCompletionReport(targetSelection.targetRoot);
-  }
-}
 
 async function setupLauncherCommand(
   context: vscode.ExtensionContext,
@@ -275,6 +337,13 @@ async function setupLauncherCommand(
   if (!targetSelection) {
     return;
   }
+
+  await logOperationEvent(output, targetSelection.targetRoot, "setup", {
+    phase: "selected-target",
+    scope: targetSelection.scope,
+    targetRoot: targetSelection.targetRoot,
+    autoReopenAfterSetup: autoReopenAfterInitialize
+  });
 
   const shouldReopen = targetSelection.scope === "current";
   const initialized = await initializeLauncherForTarget(
@@ -292,6 +361,160 @@ async function setupLauncherCommand(
   }
 }
 
+async function rollbackLauncherCommand(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel
+): Promise<void> {
+  const targetSelection = await pickOperationTarget("Apply rollback to current project or another project?");
+  if (!targetSelection) {
+    return;
+  }
+
+  await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+    phase: "selected-target",
+    scope: targetSelection.scope,
+    targetRoot: targetSelection.targetRoot
+  });
+
+  if (!(await ensureWorkspaceTrusted())) {
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "blocked",
+      reason: "workspace-untrusted"
+    }, "WARN");
+    return;
+  }
+
+  const removeCodexRuntimeData = await promptRollbackCodexRuntimeDataChoice(targetSelection.targetRoot);
+  if (typeof removeCodexRuntimeData !== "boolean") {
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "canceled",
+      reason: "codex-runtime-choice-dismissed"
+    }, "WARN");
+    return;
+  }
+
+  await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+    phase: "codex-runtime-choice",
+    removeCodexRuntimeData
+  });
+
+  const executionDetails = await resolveRollbackExecutionDetails(context, output, targetSelection.targetRoot, "rollback");
+  if (!executionDetails) {
+    return;
+  }
+
+  const preflightPlan = await buildRollbackPreflightPlan(
+    targetSelection.targetRoot,
+    executionDetails,
+    removeCodexRuntimeData
+  );
+  if (!preflightPlan) {
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "canceled",
+      reason: "preflight-unavailable"
+    }, "WARN");
+    return;
+  }
+
+  let deleteBehavior: RollbackDeleteBehavior = "Stop";
+  if (preflightPlan.requiresPermanentDeleteFallback) {
+    const deleteChoice = await promptRollbackDeleteBehaviorChoice(
+      targetSelection.targetRoot,
+      preflightPlan.unsupportedRemovalCandidates.length
+    );
+
+    if (deleteChoice !== "DeletePermanently") {
+      await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+        phase: "canceled",
+        reason: "permanent-delete-declined"
+      }, "WARN");
+      return;
+    }
+
+    deleteBehavior = "DeletePermanently";
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "fallback-approved",
+      deleteBehavior,
+      removeCodexRuntimeData
+    }, "WARN");
+  }
+
+  const initialRun = await runRollbackForTarget(
+    context,
+    output,
+    targetSelection.targetRoot,
+    deleteBehavior,
+    removeCodexRuntimeData,
+    executionDetails
+  );
+  let successfulRun = initialRun;
+  if (initialRun.exitCode !== 0 && deleteBehavior === "Stop" && rollbackNeedsPermanentDeleteDecision(initialRun)) {
+    const deleteChoice = await promptRollbackDeleteBehaviorChoice(
+      targetSelection.targetRoot,
+      preflightPlan.unsupportedRemovalCandidates.length
+    );
+
+    if (deleteChoice !== "DeletePermanently") {
+      await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+        phase: "canceled",
+        reason: "permanent-delete-declined"
+      }, "WARN");
+      return;
+    }
+
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "fallback-approved",
+      deleteBehavior: "DeletePermanently",
+      removeCodexRuntimeData
+    }, "WARN");
+
+    const rerun = await runRollbackForTarget(
+      context,
+      output,
+      targetSelection.targetRoot,
+      "DeletePermanently",
+      removeCodexRuntimeData,
+      executionDetails
+    );
+    successfulRun = rerun;
+    if (rerun.exitCode !== 0) {
+      await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+        phase: "failed",
+        reason: "rerun-nonzero-exit",
+        exitCode: rerun.exitCode
+      }, "ERROR");
+      void vscode.window.showErrorMessage("Rollback failed.");
+      return;
+    }
+  } else if (initialRun.exitCode !== 0) {
+    await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+      phase: "failed",
+      reason: "nonzero-exit",
+      exitCode: initialRun.exitCode
+    }, "ERROR");
+    void vscode.window.showErrorMessage("Rollback failed.");
+    return;
+  }
+
+  const rollbackSummary = parseRollbackSummary(successfulRun);
+  await logOperationEvent(output, targetSelection.targetRoot, "rollback", {
+    phase: "completed",
+    scope: targetSelection.scope,
+    removeCodexRuntimeData,
+    restored: rollbackSummary.restored ?? 0,
+    trashed: rollbackSummary.trashed ?? 0,
+    permanentlyDeleted: rollbackSummary.permanentlyDeleted ?? 0,
+    edited: rollbackSummary.edited ?? 0
+  });
+
+  if (targetSelection.scope === "other") {
+    await showRollbackCompletionReport(targetSelection.targetRoot, true, successfulRun);
+    return;
+  }
+
+  await showRollbackCompletionReport(targetSelection.targetRoot, false, successfulRun);
+}
+
 async function initializeLauncherForTarget(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel,
@@ -305,6 +528,11 @@ async function initializeLauncherForTarget(
   const scriptPath = context.asAbsolutePath(path.join("scripts", "vsc-launcher-wizard.ps1"));
   if (!existsSync(scriptPath)) {
     void vscode.window.showErrorMessage(`Bundled wizard script not found: ${scriptPath}`);
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "failed",
+      reason: "missing-bundled-wizard",
+      scriptPath
+    }, "ERROR");
     return false;
   }
 
@@ -313,6 +541,10 @@ async function initializeLauncherForTarget(
     void vscode.window.showErrorMessage(
       "No PowerShell runtime found. Install PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`), then retry. See 'Codex Session Isolator' output logs."
     );
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "failed",
+      reason: "powershell-not-found"
+    }, "ERROR");
     return false;
   }
   const psCommand = psDetection.command;
@@ -327,6 +559,10 @@ async function initializeLauncherForTarget(
       void vscode.window.showErrorMessage(
         "Failed to convert WSL paths for Windows PowerShell execution. Ensure 'wslpath' is available, then retry."
       );
+      await logOperationEvent(output, targetRoot, "setup", {
+        phase: "failed",
+        reason: "wsl-path-conversion-failed"
+      }, "ERROR");
       return false;
     }
 
@@ -341,6 +577,10 @@ async function initializeLauncherForTarget(
   };
   const responses = await buildWizardResponses(targetRoot, responseContext);
   if (!responses) {
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "canceled",
+      reason: "prompt-canceled"
+    }, "WARN");
     return false;
   }
 
@@ -350,10 +590,19 @@ async function initializeLauncherForTarget(
   }
 
   output.show(true);
-  appendOutputLine(output, `[extension] Running wizard for: ${targetRoot}`);
+  await logOperationEvent(output, targetRoot, "setup", {
+    phase: "starting-wizard",
+    targetRoot,
+    effectiveTargetRoot: targetRootForCommand,
+    powerShellCommand: psCommand,
+    debugMode
+  });
   const shouldPreFeedAnswers = isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand);
   if (shouldPreFeedAnswers) {
-    appendOutputLine(output, "[extension] Prefeeding wizard answers because Windows PowerShell in WSL does not reliably emit Read-Host prompts over pipes.");
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "prefeed-enabled",
+      reason: "windows-powershell-in-wsl"
+    });
   }
 
   const runResult = await vscode.window.withProgress(
@@ -368,28 +617,39 @@ async function initializeLauncherForTarget(
     }
   );
   if (runResult.failureKind === "timeout") {
-    void vscode.window.showErrorMessage(
-      "Launcher wizard timed out after 120 seconds. Check 'Codex Session Isolator' output logs for details."
-    );
+    void vscode.window.showErrorMessage("Launcher wizard timed out after 120 seconds.");
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "failed",
+      reason: "timeout"
+    }, "ERROR");
     return false;
   }
 
   if (runResult.failureKind === "unknownPrompt") {
-    void vscode.window.showErrorMessage(
-      "Launcher wizard stopped on an unknown prompt to avoid hanging. Check 'Codex Session Isolator' output logs."
-    );
+    void vscode.window.showErrorMessage("Launcher wizard stopped on an unknown prompt to avoid hanging.");
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "failed",
+      reason: "unknown-prompt"
+    }, "ERROR");
     return false;
   }
 
   if (runResult.exitCode !== 0) {
-    void vscode.window.showErrorMessage(
-      "Launcher wizard failed. See 'Codex Session Isolator' output channel for details."
-    );
+    void vscode.window.showErrorMessage("Launcher wizard failed.");
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "failed",
+      reason: "wizard-exit-nonzero",
+      exitCode: runResult.exitCode
+    }, "ERROR");
     return false;
   }
 
   if (options.autoReopenAfterInitialize) {
     void vscode.window.showInformationMessage("Launcher setup complete. Reopening with launcher...");
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "completed",
+      reopenDecision: "auto"
+    });
     const reopened = await reopenWithLauncher(context, output, targetRoot, false, true);
     if (!reopened) {
       return false;
@@ -398,6 +658,10 @@ async function initializeLauncherForTarget(
   }
 
   if (options.promptToReopenAfterInitialize) {
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "completed",
+      reopenDecision: "prompt"
+    });
     const action = await vscode.window.showInformationMessage(
       "Launcher generated successfully. Reopen this project with the launcher now?",
       { modal: true },
@@ -406,6 +670,9 @@ async function initializeLauncherForTarget(
     );
 
     if (action === "Reopen With Launcher") {
+      await logOperationEvent(output, targetRoot, "setup", {
+        phase: "reopen-confirmed"
+      });
       const reopened = await reopenWithLauncher(context, output, targetRoot, false, true);
       if (!reopened) {
         return false;
@@ -413,7 +680,75 @@ async function initializeLauncherForTarget(
     }
   }
 
+  if (!options.autoReopenAfterInitialize && !options.promptToReopenAfterInitialize) {
+    await logOperationEvent(output, targetRoot, "setup", {
+      phase: "completed",
+      reopenDecision: "none"
+    });
+  }
+
   return true;
+}
+
+async function runRollbackForTarget(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  deleteBehavior: RollbackDeleteBehavior,
+  removeCodexRuntimeData: boolean,
+  executionDetails?: RollbackExecutionDetails
+): Promise<RollbackRunResult> {
+  const resolvedExecution = executionDetails
+    ?? await resolveRollbackExecutionDetails(context, output, targetRoot, "rollback");
+  if (!resolvedExecution) {
+    return { exitCode: 1, stdout: "", stderr: "Rollback execution details could not be resolved." };
+  }
+
+  const psCommand = resolvedExecution.powerShellCommand;
+  const debugMode = getBooleanSetting("debugWizardByDefault", false);
+  const scriptPathForCommand = resolvedExecution.scriptPathForCommand;
+  const targetRootForCommand = resolvedExecution.targetRootForCommand;
+
+  const args = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPathForCommand,
+    "-TargetPath",
+    targetRootForCommand,
+    "-Rollback",
+    "-RollbackDeleteBehavior",
+    deleteBehavior
+  ];
+  if (removeCodexRuntimeData) {
+    args.push("-RollbackRemoveCodexRuntimeData");
+  }
+  if (debugMode) {
+    args.push("-DebugMode");
+  }
+
+  output.show(true);
+  await logOperationEvent(output, targetRoot, "rollback", {
+    phase: "starting",
+    targetRoot,
+    effectiveTargetRoot: targetRootForCommand,
+    powerShellCommand: psCommand,
+    deleteBehavior,
+    removeCodexRuntimeData,
+    debugMode
+  });
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Codex Session Isolator: Rolling back launcher changes",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Running rollback..." });
+      return runNonInteractiveProcess(psCommand, args, targetRoot, output);
+    }
+  );
 }
 
 async function runWizardProcess(
@@ -521,6 +856,62 @@ async function runWizardProcess(
         "timeout",
         `Wizard process timed out after ${Math.floor(WIZARD_TIMEOUT_MS / 1000)} seconds.`
       );
+    }, WIZARD_TIMEOUT_MS);
+  });
+}
+
+async function runNonInteractiveProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  output: vscode.OutputChannel
+): Promise<RollbackRunResult> {
+  return new Promise<RollbackRunResult>((resolve) => {
+    const child = spawn(command, args, { cwd, env: process.env });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const finalize = (result: RollbackRunResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutHandle);
+      resolve(result);
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      output.append(text);
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      output.append(text);
+    });
+
+    child.on("error", (error: Error) => {
+      finalize({
+        exitCode: 1,
+        stdout,
+        stderr: `${stderr}\n${error.message}`.trim()
+      });
+    });
+
+    child.on("close", (code: number | null) => {
+      finalize({ exitCode: code ?? 1, stdout, stderr });
+    });
+
+    const timeoutHandle = setTimeout(() => {
+      terminateProcess(child as ChildProcessWithoutNullStreams, output);
+      finalize({
+        exitCode: 1,
+        stdout,
+        stderr: `${stderr}\nRollback process timed out after ${Math.floor(WIZARD_TIMEOUT_MS / 1000)} seconds.`.trim()
+      });
     }, WIZARD_TIMEOUT_MS);
   });
 }
@@ -1023,7 +1414,9 @@ function getProjectPickerDefaultUri(): vscode.Uri {
   return vscode.Uri.file(path.parse(process.cwd()).root || "/");
 }
 
-async function pickOperationTarget(): Promise<{ targetRoot: string; scope: "current" | "other" } | undefined> {
+async function pickOperationTarget(
+  placeHolder = "Apply launcher setup to current project or another project?"
+): Promise<{ targetRoot: string; scope: "current" | "other" } | undefined> {
   const currentRoot = await pickCurrentWorkspaceRootOnly();
   if (!currentRoot) {
     const fallback = await pickTargetRoot();
@@ -1044,7 +1437,7 @@ async function pickOperationTarget(): Promise<{ targetRoot: string; scope: "curr
       }
     ],
     {
-      placeHolder: "Apply launcher setup to current project or another project?",
+      placeHolder,
       canPickMany: false
     }
   );
@@ -1063,6 +1456,410 @@ async function pickOperationTarget(): Promise<{ targetRoot: string; scope: "curr
   }
 
   return { targetRoot: otherRoot, scope: "other" };
+}
+
+function getRollbackManifestPath(targetRoot: string): string {
+  return path.join(targetRoot, ".vsc_launcher", "rollback.manifest.json");
+}
+
+async function readRollbackManifest(targetRoot: string): Promise<RollbackManifest | undefined> {
+  const manifestPath = getRollbackManifestPath(targetRoot);
+  if (!existsSync(manifestPath)) {
+    return undefined;
+  }
+
+  const raw = await fs.readFile(manifestPath, "utf8");
+  return JSON.parse(raw) as RollbackManifest;
+}
+
+function getRollbackRecordDisplayPath(targetRoot: string, record: RollbackManifestRecord | undefined | null): string | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  if (typeof record.projectRelativePath === "string" && record.projectRelativePath.trim().length > 0) {
+    return record.projectRelativePath.replace(/\//g, path.sep);
+  }
+
+  if (typeof record.absolutePath === "string" && record.absolutePath.trim().length > 0) {
+    const resolvedRoot = path.resolve(targetRoot);
+    const resolvedAbsolute = path.resolve(record.absolutePath);
+    if (resolvedAbsolute === resolvedRoot || resolvedAbsolute.startsWith(`${resolvedRoot}${path.sep}`)) {
+      return path.relative(resolvedRoot, resolvedAbsolute) || path.basename(resolvedAbsolute);
+    }
+    return record.absolutePath;
+  }
+
+  return undefined;
+}
+
+function parseRollbackSummary(runResult: RollbackRunResult): { restored?: number; trashed?: number; permanentlyDeleted?: number; edited?: number } {
+  const combined = `${runResult.stdout}\n${runResult.stderr}`;
+  const extractCount = (label: string): number | undefined => {
+    const match = combined.match(new RegExp(`-\\s+${label}:\\s+(\\d+)`, "i"));
+    return match ? Number(match[1]) : undefined;
+  };
+
+  return {
+    restored: extractCount("Restored"),
+    trashed: extractCount("Trashed"),
+    permanentlyDeleted: extractCount("PermanentlyDeleted"),
+    edited: extractCount("Edited")
+  };
+}
+
+function rollbackNeedsPermanentDeleteDecision(runResult: RollbackRunResult): boolean {
+  const combined = `${runResult.stdout}\n${runResult.stderr}`;
+  return (
+    combined.includes("Native Trash/Recycle Bin is not available")
+    || combined.includes("native Trash/Recycle Bin is unavailable")
+  );
+}
+
+async function hasRemovableCodexRuntimeData(targetRoot: string): Promise<boolean> {
+  const codexRoot = path.join(targetRoot, ".codex");
+  try {
+    const entries = await fs.readdir(codexRoot, { withFileTypes: true });
+    return entries.some((entry) => !(entry.isFile() && entry.name.toLowerCase() === "config.toml"));
+  } catch {
+    return false;
+  }
+}
+
+async function promptRollbackCodexRuntimeDataChoice(targetRoot: string): Promise<boolean | undefined> {
+  if (!(await hasRemovableCodexRuntimeData(targetRoot))) {
+    return false;
+  }
+
+  const selection = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Keep project Codex runtime data (recommended)",
+        description: "Preserve .codex content",
+        removeCodexRuntimeData: false
+      },
+      {
+        label: "Remove project Codex runtime data",
+        description: "Delete everything in .codex except config.toml",
+        removeCodexRuntimeData: true
+      }
+    ],
+    {
+      placeHolder: `Choose how rollback should handle .codex data for ${targetRoot}`,
+      canPickMany: false
+    }
+  );
+
+  return selection?.removeCodexRuntimeData;
+}
+
+async function promptRollbackDeleteBehaviorChoice(
+  targetRoot: string,
+  unsupportedPathCount: number
+): Promise<RollbackDeleteBehavior | undefined> {
+  const selection = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Stop rollback (recommended)",
+        description: "Do not continue if permanent deletion would be required",
+        deleteBehavior: "Stop" as RollbackDeleteBehavior
+      },
+      {
+        label: "Delete permanently",
+        description: `Continue for ${unsupportedPathCount} unsupported rollback path(s) without Trash/Recycle Bin`,
+        deleteBehavior: "DeletePermanently" as RollbackDeleteBehavior
+      }
+    ],
+    {
+      placeHolder: `Trash/Recycle Bin is unavailable for ${targetRoot}. Choose how rollback should continue.`,
+      canPickMany: false
+    }
+  );
+
+  return selection?.deleteBehavior;
+}
+
+async function resolveRollbackExecutionDetails(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+  targetRoot: string,
+  operation: "rollback" | "setup"
+): Promise<RollbackExecutionDetails | undefined> {
+  const scriptPath = context.asAbsolutePath(path.join("scripts", "vsc-launcher-wizard.ps1"));
+  if (!existsSync(scriptPath)) {
+    void vscode.window.showErrorMessage(`Bundled wizard script not found: ${scriptPath}`);
+    await logOperationEvent(output, targetRoot, operation, {
+      phase: "failed",
+      reason: "missing-bundled-wizard",
+      scriptPath
+    }, "ERROR");
+    return undefined;
+  }
+
+  const psDetection = await detectPowerShellCommandRuntime(output);
+  if (!psDetection.command) {
+    void vscode.window.showErrorMessage(
+      "No PowerShell runtime found. Install PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`), then retry. See 'Codex Session Isolator' output logs."
+    );
+    await logOperationEvent(output, targetRoot, operation, {
+      phase: "failed",
+      reason: "powershell-not-found"
+    }, "ERROR");
+    return undefined;
+  }
+
+  const psCommand = psDetection.command;
+  let scriptPathForCommand = scriptPath;
+  let targetRootForCommand = targetRoot;
+  let executionPlatform: RollbackExecutionPlatform =
+    process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux";
+
+  if (isWslEnvironmentRuntime() && isWindowsPowerShellExecutable(psCommand)) {
+    const convertedScriptPath = await convertWslPathToWindows(scriptPath);
+    const convertedTargetRoot = await convertWslPathToWindows(targetRoot);
+    if (!convertedScriptPath || !convertedTargetRoot) {
+      void vscode.window.showErrorMessage(
+        "Failed to convert WSL paths for Windows PowerShell execution. Ensure 'wslpath' is available, then retry."
+      );
+      await logOperationEvent(output, targetRoot, operation, {
+        phase: "failed",
+        reason: "wsl-path-conversion-failed"
+      }, "ERROR");
+      return undefined;
+    }
+
+    scriptPathForCommand = convertedScriptPath;
+    targetRootForCommand = convertedTargetRoot;
+    executionPlatform = "windows";
+    appendOutputLine(output, `[extension] Using Windows PowerShell path translation for ${operation} target: ${targetRootForCommand}`);
+  } else if (isWindowsPowerShellExecutable(psCommand)) {
+    executionPlatform = "windows";
+  }
+
+  return {
+    powerShellCommand: psCommand,
+    scriptPathForCommand,
+    targetRootForCommand,
+    executionPlatform
+  };
+}
+
+function joinExecutionRelativePath(basePath: string, portableRelativePath: string, executionPlatform: RollbackExecutionPlatform): string {
+  const sanitizedRelative = portableRelativePath.replace(/^\/+/, "");
+  if (executionPlatform === "windows") {
+    return path.win32.join(basePath, sanitizedRelative.replace(/\//g, "\\"));
+  }
+
+  return path.posix.join(basePath, sanitizedRelative.replace(/\\/g, "/"));
+}
+
+function canUseNativeTrashForExecutionPath(targetPath: string, executionPlatform: RollbackExecutionPlatform): boolean {
+  if (!targetPath.trim()) {
+    return false;
+  }
+
+  if (executionPlatform === "windows") {
+    return !/^\\\\/i.test(targetPath);
+  }
+
+  const homeDir = (process.env.HOME ?? os.homedir() ?? "").trim();
+  return homeDir.length > 0;
+}
+
+async function buildRollbackPreflightPlan(
+  targetRoot: string,
+  executionDetails: RollbackExecutionDetails,
+  removeCodexRuntimeData: boolean
+): Promise<RollbackPreflightPlan | undefined> {
+  let manifest: RollbackManifest | undefined;
+  try {
+    manifest = await readRollbackManifest(targetRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`Rollback manifest could not be read safely: ${message}`);
+    return undefined;
+  }
+
+  if (!manifest) {
+    void vscode.window.showWarningMessage(
+      "No rollback manifest was found for this project. Automatic rollback is not available for this target."
+    );
+    return undefined;
+  }
+
+  if (manifest.schemaVersion !== 1) {
+    void vscode.window.showWarningMessage(
+      `Rollback manifest schema version '${String(manifest.schemaVersion ?? "unknown")}' is not supported by this extension build.`
+    );
+    return undefined;
+  }
+
+  const managedFiles = manifest.managedFiles ?? {};
+  const deletionCandidates: RollbackRemovalCandidate[] = [];
+  const addRemovalCandidate = (record: RollbackManifestRecord | undefined | null) => {
+    const displayPath = getRollbackRecordDisplayPath(targetRoot, record);
+    if (!displayPath) {
+      return;
+    }
+
+    const localProjectPath = path.resolve(targetRoot, displayPath);
+    const existsNow = existsSync(localProjectPath)
+      || (record?.pathScope === "external" && !!record.absolutePath && existsSync(record.absolutePath));
+    if (!existsNow) {
+      return;
+    }
+
+    const executionPath = record?.pathScope === "external" && record.absolutePath
+      ? record.absolutePath
+      : joinExecutionRelativePath(
+        executionDetails.targetRootForCommand,
+        displayPath.replace(/\\/g, "/"),
+        executionDetails.executionPlatform
+      );
+
+    deletionCandidates.push({ displayPath, executionPath });
+  };
+
+  addRemovalCandidate(managedFiles.launcher);
+  addRemovalCandidate(managedFiles.launcherConfig);
+  addRemovalCandidate(managedFiles.launcherRunner);
+  addRemovalCandidate(managedFiles.windowsShortcut);
+  addRemovalCandidate(managedFiles.wizardDefaults);
+  if (manifest.generatedWorkspace?.createdByWizard) {
+    addRemovalCandidate(manifest.generatedWorkspace);
+  }
+
+  if (managedFiles.vscodeSettings && existsSync(path.join(targetRoot, ".vscode", "settings.json"))) {
+    if (managedFiles.vscodeSettings.existedBeforeSetup === false) {
+      deletionCandidates.push({
+        displayPath: ".vscode/settings.json",
+        executionPath: joinExecutionRelativePath(
+          executionDetails.targetRootForCommand,
+          ".vscode/settings.json",
+          executionDetails.executionPlatform
+        )
+      });
+    }
+  }
+
+  const preserveMetadataDir = Boolean(managedFiles.metadataDirectory?.existedBeforeSetup)
+    || Boolean(managedFiles.wizardDefaults?.hadBackup)
+    || Boolean(managedFiles.launcherConfig?.hadBackup)
+    || Boolean(managedFiles.launcherRunner?.hadBackup);
+
+  const latestBackupProjectRelativePath = typeof manifest.latestBackupProjectRelativePath === "string"
+    && manifest.latestBackupProjectRelativePath.trim().length > 0
+      ? manifest.latestBackupProjectRelativePath
+      : undefined;
+
+  if (preserveMetadataDir) {
+    if (latestBackupProjectRelativePath) {
+      const backupDisplayPath = latestBackupProjectRelativePath.replace(/\//g, path.sep);
+      if (existsSync(path.join(targetRoot, backupDisplayPath))) {
+        deletionCandidates.push({
+          displayPath: backupDisplayPath,
+          executionPath: joinExecutionRelativePath(
+            executionDetails.targetRootForCommand,
+            latestBackupProjectRelativePath,
+            executionDetails.executionPlatform
+          )
+        });
+      }
+    }
+
+    const manifestDisplayPath = path.join(".vsc_launcher", "rollback.manifest.json");
+    if (existsSync(path.join(targetRoot, manifestDisplayPath))) {
+      deletionCandidates.push({
+        displayPath: manifestDisplayPath,
+        executionPath: joinExecutionRelativePath(
+          executionDetails.targetRootForCommand,
+          ".vsc_launcher/rollback.manifest.json",
+          executionDetails.executionPlatform
+        )
+      });
+    }
+  } else if (existsSync(path.join(targetRoot, ".vsc_launcher"))) {
+    deletionCandidates.push({
+      displayPath: ".vsc_launcher",
+      executionPath: joinExecutionRelativePath(
+        executionDetails.targetRootForCommand,
+        ".vsc_launcher",
+        executionDetails.executionPlatform
+      )
+    });
+  }
+
+  if (removeCodexRuntimeData) {
+    const codexRoot = path.join(targetRoot, ".codex");
+    try {
+      const codexEntries = await fs.readdir(codexRoot, { withFileTypes: true });
+      let preserveConfig = false;
+      for (const entry of codexEntries) {
+        if (entry.isFile() && entry.name.toLowerCase() === "config.toml") {
+          preserveConfig = true;
+          continue;
+        }
+
+        const displayPath = path.join(".codex", entry.name);
+        deletionCandidates.push({
+          displayPath,
+          executionPath: joinExecutionRelativePath(
+            executionDetails.targetRootForCommand,
+            `.codex/${entry.name}`,
+            executionDetails.executionPlatform
+          )
+        });
+      }
+
+      if (codexEntries.some((entry) => !(entry.isFile() && entry.name.toLowerCase() === "config.toml")) && !preserveConfig) {
+        deletionCandidates.push({
+          displayPath: ".codex",
+          executionPath: joinExecutionRelativePath(
+            executionDetails.targetRootForCommand,
+            ".codex",
+            executionDetails.executionPlatform
+          )
+        });
+      }
+    } catch {
+      // Ignore .codex inspection errors here; the dedicated prompt already suppresses missing-path cases.
+    }
+  }
+
+  const unsupportedRemovalCandidates = deletionCandidates
+    .filter((candidate) => !canUseNativeTrashForExecutionPath(candidate.executionPath, executionDetails.executionPlatform))
+    .map((candidate) => candidate.displayPath);
+
+  return {
+    unsupportedRemovalCandidates,
+    requiresPermanentDeleteFallback: unsupportedRemovalCandidates.length > 0
+  };
+}
+
+async function showRollbackCompletionReport(
+  targetRoot: string,
+  isExternal: boolean,
+  runResult: RollbackRunResult
+): Promise<void> {
+  const summary = parseRollbackSummary(runResult);
+  const detailLines = [
+    `Target: ${targetRoot}`,
+    `Restored: ${summary.restored ?? 0}`,
+    `Trashed: ${summary.trashed ?? 0}`,
+    `Permanently deleted: ${summary.permanentlyDeleted ?? 0}`,
+    `Edited: ${summary.edited ?? 0}`
+  ];
+
+  if (isExternal) {
+    detailLines.push("", "Current VS Code window was not changed because rollback targeted another project.");
+  }
+
+  await vscode.window.showInformationMessage(
+    isExternal
+      ? "Rollback completed for another project."
+      : "Rollback completed for the current project.",
+    { modal: true, detail: detailLines.join("\n") }
+  );
 }
 
 async function showExternalTargetCompletionReport(targetRoot: string): Promise<void> {
@@ -1091,7 +1888,7 @@ async function showExternalTargetCompletionReport(targetRoot: string): Promise<v
 async function openLogsFolder(targetRoot: string): Promise<void> {
   const logsPath = path.join(targetRoot, ".vsc_launcher", "logs");
   if (!existsSync(logsPath)) {
-    void vscode.window.showWarningMessage("Launcher logs folder not found. Initialize launcher first.");
+    void vscode.window.showWarningMessage("Launcher logs folder not found. Run Setup Launcher first.");
     return;
   }
 
@@ -1137,7 +1934,7 @@ async function openConfigFile(targetRoot: string): Promise<void> {
   ];
   const configPath = configCandidates.find((candidate) => existsSync(candidate));
   if (!configPath) {
-    void vscode.window.showWarningMessage("Launcher config not found. Initialize launcher first.");
+    void vscode.window.showWarningMessage("Launcher config not found. Run Setup Launcher first.");
     return;
   }
 
@@ -1165,17 +1962,25 @@ async function reopenWithLauncher(
   if (!existsSync(launcherPath)) {
     if (!allowSetupWhenMissing) {
       void vscode.window.showWarningMessage(missingLauncherMessage);
+      await logOperationEvent(output, targetRoot, "reopen", {
+        phase: "failed",
+        reason: "launcher-missing"
+      }, "WARN");
       return false;
     }
 
     const action = await vscode.window.showWarningMessage(
       missingLauncherMessage,
-      "Initialize only",
-      "Initialize & Reopen",
+      "Setup only",
+      "Setup & Reopen",
       "Cancel"
     );
 
-    if (action === "Initialize only") {
+    if (action === "Setup only") {
+      await logOperationEvent(output, targetRoot, "reopen", {
+        phase: "launcher-missing",
+        resolution: "setup-only"
+      }, "WARN");
       await initializeLauncherForTarget(
         context,
         output,
@@ -1185,11 +1990,19 @@ async function reopenWithLauncher(
       return false;
     }
 
-    if (action === "Initialize & Reopen") {
+    if (action === "Setup & Reopen") {
+      await logOperationEvent(output, targetRoot, "reopen", {
+        phase: "launcher-missing",
+        resolution: "setup-and-reopen"
+      }, "WARN");
       await setupLauncherCommand(context, output, targetRoot, true);
       return false;
     }
 
+    await logOperationEvent(output, targetRoot, "reopen", {
+      phase: "canceled",
+      reason: "launcher-missing-cancel"
+    }, "WARN");
     return false;
   }
 
@@ -1197,7 +2010,14 @@ async function reopenWithLauncher(
     if (output) {
       appendOutputLine(output, `[extension][reopen] ${message}`);
     }
+    void appendProjectLogLine(targetRoot, "reopen", { message });
   };
+
+  await logOperationEvent(output, targetRoot, "reopen", {
+    phase: "starting",
+    targetRoot,
+    launcherPath
+  });
 
   const launched = await vscode.window.withProgress(
     {
@@ -1276,6 +2096,10 @@ async function reopenWithLauncher(
       ? "Failed to start launcher via cmd.exe. Check 'Codex Session Isolator' output logs."
       : "Failed to reopen with launcher. Direct execution and bash/zsh fallbacks did not start successfully. Check 'Codex Session Isolator' output logs.";
     void vscode.window.showErrorMessage(message);
+    await logOperationEvent(output, targetRoot, "reopen", {
+      phase: "failed",
+      reason: "launcher-dispatch-failed"
+    }, "ERROR");
     return false;
   }
 
@@ -1289,6 +2113,11 @@ async function reopenWithLauncher(
       "Launcher started successfully. You can close this window after the new launcher window opens."
     );
   }
+
+  await logOperationEvent(output, targetRoot, "reopen", {
+    phase: "completed",
+    closeCurrentWindow: shouldClose
+  });
 
   return true;
 }

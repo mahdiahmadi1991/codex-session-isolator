@@ -7,15 +7,19 @@ $ErrorActionPreference = "Stop"
 
 function Show-Usage {
   Write-Host "Usage:"
-  Write-Host "  vsc-launcher [<target-path>] [--debug] [--help]"
+  Write-Host "  vsc-launcher [<target-path>] [--debug] [--rollback] [--rollback-codex-runtime-data] [--help]"
   Write-Host ""
   Write-Host "Examples:"
   Write-Host "  vsc-launcher ""C:\dev\my-app"""
-  Write-Host "  vsc-launcher ""/home/mehdi/projects/my-app"" --debug"
+  Write-Host "  vsc-launcher ""/home/user/projects/my-app"" --debug"
+  Write-Host "  vsc-launcher ""/home/user/projects/my-app"" --rollback"
+  Write-Host "  vsc-launcher ""/home/user/projects/my-app"" --rollback --rollback-codex-runtime-data"
 }
 
 $targetPath = $null
 $debugMode = $false
+$rollbackMode = $false
+$rollbackCodexRuntimeData = $false
 
 for ($i = 0; $i -lt $Arguments.Count; $i++) {
   $arg = $Arguments[$i]
@@ -26,6 +30,14 @@ for ($i = 0; $i -lt $Arguments.Count; $i++) {
     }
     '^--debug$|^-debug$|^-debugmode$' {
       $debugMode = $true
+      continue
+    }
+    '^--rollback$|^-rollback$' {
+      $rollbackMode = $true
+      continue
+    }
+    '^--rollback-codex-runtime-data$|^-rollbackcodexruntimedata$' {
+      $rollbackCodexRuntimeData = $true
       continue
     }
     '^--target$|^-target$' {
@@ -57,13 +69,21 @@ if (-not (Test-Path -LiteralPath $wizardPath -PathType Leaf)) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($targetPath)) {
-  if ($debugMode) {
+  if ($rollbackMode -and $debugMode) {
+    & $wizardPath -TargetPath $targetPath -DebugMode -Rollback -RollbackRemoveCodexRuntimeData:$rollbackCodexRuntimeData
+  } elseif ($rollbackMode) {
+    & $wizardPath -TargetPath $targetPath -Rollback -RollbackRemoveCodexRuntimeData:$rollbackCodexRuntimeData
+  } elseif ($debugMode) {
     & $wizardPath -TargetPath $targetPath -DebugMode
   } else {
     & $wizardPath -TargetPath $targetPath
   }
 } else {
-  if ($debugMode) {
+  if ($rollbackMode -and $debugMode) {
+    & $wizardPath -DebugMode -Rollback -RollbackRemoveCodexRuntimeData:$rollbackCodexRuntimeData
+  } elseif ($rollbackMode) {
+    & $wizardPath -Rollback -RollbackRemoveCodexRuntimeData:$rollbackCodexRuntimeData
+  } elseif ($debugMode) {
     & $wizardPath -DebugMode
   } else {
     & $wizardPath
