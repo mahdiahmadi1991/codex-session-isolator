@@ -736,9 +736,13 @@ function Get-RelativePathSafe {
   )
 
   $baseResolvedInfo = Resolve-Path -LiteralPath $BasePath -ErrorAction Stop | Select-Object -First 1
-  $targetResolvedInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction Stop | Select-Object -First 1
+  $targetResolvedInfo = Resolve-Path -LiteralPath $TargetPath -ErrorAction SilentlyContinue | Select-Object -First 1
   $baseResolved = [IO.Path]::GetFullPath($baseResolvedInfo.ProviderPath)
-  $targetResolved = [IO.Path]::GetFullPath($targetResolvedInfo.ProviderPath)
+  $targetResolved = if ($null -ne $targetResolvedInfo) {
+    [IO.Path]::GetFullPath($targetResolvedInfo.ProviderPath)
+  } else {
+    [IO.Path]::GetFullPath($TargetPath)
+  }
 
   $method = [IO.Path].GetMethod("GetRelativePath", [Type[]]@([string], [string]))
   if ($null -ne $method) {
