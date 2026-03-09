@@ -65,6 +65,12 @@ git add .
 git commit -m "chore: prepare release vX.Y.Z"
 ```
 
+Immediately after any extension version change is committed, create the matching git tag in the same release step. Do not defer tagging to a later session.
+
+- Stable version `X.Y.Z` -> create tag `vX.Y.Z`
+- Pre-release version `X.Y.Z` -> create tag `vX.Y.Z`
+- The extension version and git tag must stay 1:1 across both channels because the numeric version lanes are already unique.
+
 ## 5) Push release branch and open stable PR
 
 ```powershell
@@ -76,7 +82,8 @@ git push origin release/X.Y.Z
 
 ## 6) Tag and GitHub release
 
-- Create tag only when you need a formal source tag/audit point for stable.
+- Git tag creation is mandatory for every extension version change.
+- Create the matching tag in the same work session as the version bump commit.
 - For manual stable fallback workflow, tag must match `v<extension.version>`.
 
 ```powershell
@@ -105,3 +112,5 @@ Example:
 - Next `pre-release` version must become `0.3.11`
 
 This keeps Marketplace channel metadata deterministic and prevents the stable channel from inheriting stale pre-release metadata for the same numeric version.
+
+When that pre-release bump is committed, create and push its matching git tag immediately as well.

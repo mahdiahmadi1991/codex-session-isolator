@@ -44,6 +44,8 @@ Do not manually diverge these two wizard files. Update `tools/` then sync.
 - Feature/fix work targets `pre-release`.
 - Promotion to `main` is from `pre-release`.
 - Emergency exception uses label `allow-main-hotfix` and requires back-sync `main -> pre-release`.
+- Every extension version change must create the matching git tag (`v<extension.version>`) in the same work session. Do not postpone tagging.
+- Keep the git flow clean after merges: sync local `main` / `pre-release` with origin, delete merged temporary branches, and avoid leaving stale release/sync branches behind.
 
 ## Validation Matrix
 

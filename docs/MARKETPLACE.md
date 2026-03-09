@@ -106,7 +106,8 @@ Stable policy rules:
 - Stable channel must use an even patch version (`x.y.0`, `x.y.2`, ...).
 - Pre-release channel must use an odd patch version (`x.y.1`, `x.y.3`, ...).
 - The same numeric version must never be reused across both channels.
-- Stable git tag MUST match extension version (`v<version>`).
+- Every extension version change MUST create the matching git tag in the same work session.
+- Git tag MUST match extension version (`v<version>`).
 - Manual stable publish MUST run on `main` and pass `release_tag=v<version>`.
 - Stable extension manifest MUST not be preview (`preview` omitted or `false`).
 
@@ -124,9 +125,10 @@ Recommended rollout:
 1. Merge feature work into `pre-release` and keep the extension version on an odd patch number.
 2. When ready to ship, cut `release/<stable-version>` from `pre-release`.
 3. Bump the extension version on the release branch to the next even patch number.
-4. Merge the release branch into `main` (push/merge to `main` auto-publishes stable).
-5. Immediately bump `pre-release` again to the next odd patch after the stable release lands.
-6. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
+4. Create and push the matching git tag immediately after the version bump commit.
+5. Merge the release branch into `main` (push/merge to `main` auto-publishes stable).
+6. Immediately bump `pre-release` again to the next odd patch after the stable release lands, then tag that new odd version immediately as well.
+7. Use manual stable `workflow_dispatch` only as fallback (`ref=main`, `release_tag=v<version>`).
 
 ## Integrity verification (consumer side)
 

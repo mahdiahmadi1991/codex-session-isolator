@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Release/process documentation now requires creating the matching git tag immediately whenever `extension/package.json` version changes, for both stable and pre-release lanes.
+
 ### Added
 
 - Rollback mode for the launcher helper and extension now removes launcher-managed changes for the latest setup using `.vsc_launcher/rollback.manifest.json`, with current-project vs another-project targeting in the extension.
